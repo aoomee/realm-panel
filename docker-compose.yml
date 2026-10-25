@@ -1,6 +1,6 @@
 services:
   realm:
-    image: ghcr.io/zhboner/realm:latest
+    build: ./realm-container    # builds from GitHub Releases binary, no registry auth needed
     container_name: realm
     restart: unless-stopped
     network_mode: host          # realm needs full host networking for port binding
