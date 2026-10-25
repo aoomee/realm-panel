@@ -4,121 +4,175 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Realm 转发面板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:        #0f1117;
-  --surface:   #1a1d27;
-  --raised:    #22263a;
-  --border:    #2e3352;
-  --text:      #e2e6f3;
-  --muted:     #7a82a8;
-  --accent:    oklch(65% 0.18 255);
-  --accent-dim:oklch(55% 0.14 255);
-  --green:     oklch(65% 0.18 145);
-  --yellow:    oklch(70% 0.16 80);
-  --red:       oklch(62% 0.20 25);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --sp1: 4px; --sp2: 8px; --sp3: 12px; --sp4: 16px; --sp6: 24px;
+  --bg:        #f4f4f6;
+  --surface:   #ffffff;
+  --raised:    #f9f9fa;
+  --border:    #e5e5e5;
+  --text:      #111111;
+  --muted:     #888888;
+  --black:     #000000;
+  --radius-sm: 16px;
+  --radius-md: 24px;
+  --radius-lg: 32px;
+  --sp1: 6px; --sp2: 12px; --sp3: 16px; --sp4: 24px; --sp6: 32px;
+  --shadow:    0 12px 40px rgba(0,0,0,0.06);
+  --spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font: 14px/1.6 system-ui, sans-serif; min-height: 100vh; }
-a { color: var(--accent); text-decoration: none; }
-
-/* Layout */
-.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
-.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: var(--sp6) var(--sp4); display: flex; flex-direction: column; gap: var(--sp2); }
-.logo { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: var(--sp4); letter-spacing: .03em; }
-.nav-item { padding: var(--sp2) var(--sp3); border-radius: var(--radius-sm); cursor: pointer; color: var(--muted); transition: background .15s, color .15s; }
-.nav-item:hover, .nav-item.active { background: var(--raised); color: var(--text); }
-.main { padding: var(--sp6); overflow-y: auto; }
-.page { display: none; } .page.active { display: block; }
-h2 { font-size: 18px; font-weight: 600; margin-bottom: var(--sp4); }
-h3 { font-size: 15px; font-weight: 600; margin-bottom: var(--sp3); }
-
-/* Cards */
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--sp4); margin-bottom: var(--sp4); }
-.card-title { font-size: 13px; color: var(--muted); margin-bottom: var(--sp2); text-transform: uppercase; letter-spacing: .06em; }
-.card-value { font-size: 22px; font-weight: 700; }
-
-/* Stats row */
-.stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp4); margin-bottom: var(--sp6); }
-
-/* Table */
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { color: var(--muted); font-weight: 600; text-align: left; padding: var(--sp2) var(--sp3); border-bottom: 1px solid var(--border); }
-td { padding: var(--sp2) var(--sp3); border-bottom: 1px solid var(--border); vertical-align: middle; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.6 'Nunito', system-ui, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--black); text-decoration: none; }
+.shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: var(--sp6) var(--sp4);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
+}
+.logo {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--black);
+  margin-bottom: var(--sp6);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo::before {
+  content: '';
+  display: block;
+  width: 16px; height: 16px;
+  background: var(--black);
+  border-radius: 6px;
+  transform: rotate(45deg);
+  transition: transform 0.6s var(--spring);
+}
+.sidebar:hover .logo::before { transform: rotate(225deg) scale(1.2); }
+.nav-item {
+  padding: 14px var(--sp3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 700;
+  transition: all 0.4s var(--spring);
+  display: flex; align-items: center; gap: 12px;
+  background: transparent;
+}
+.nav-item:hover { background: var(--raised); color: var(--text); transform: translateX(6px); }
+.nav-item.active { background: var(--black); color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.15); transform: scale(1.02); }
+.nav-item:active { transform: scale(0.95); }
+.main { padding: 40px; overflow-y: auto; position: relative; }
+@keyframes bounceUp {
+  0%   { opacity: 0; transform: translateY(30px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.page { display: none; }
+.page.active { display: block; animation: bounceUp 0.6s var(--spring) forwards; }
+h2 { font-size: 28px; font-weight: 900; margin-bottom: var(--sp6); letter-spacing: -0.03em; }
+h3 { font-size: 20px; font-weight: 900; margin-bottom: var(--sp3); }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp4);
+  margin-bottom: var(--sp4);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+  transition: all 0.4s var(--spring);
+}
+.card:hover { box-shadow: var(--shadow); transform: translateY(-4px); border-color: transparent; }
+.card-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
+.card-value { font-size: 36px; font-weight: 900; line-height: 1.2; letter-spacing: -0.04em; }
+.stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp4); margin-bottom: var(--sp6); }
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+th { color: var(--muted); font-weight: 700; text-align: left; padding: var(--sp3); border-bottom: 2px solid var(--raised); white-space: nowrap; }
+td { padding: var(--sp3); border-bottom: 1px solid var(--raised); vertical-align: middle; transition: background 0.3s ease; }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--raised); }
-
-/* Badges */
-.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
-.badge-green { background: oklch(65% 0.18 145 / 15%); color: var(--green); }
-.badge-red   { background: oklch(62% 0.20 25  / 15%); color: var(--red); }
-.badge-yellow{ background: oklch(70% 0.16 80  / 15%); color: var(--yellow); }
-.badge-blue  { background: oklch(65% 0.18 255 / 15%); color: var(--accent); }
-
-/* Progress bar */
-.progress { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; min-width: 80px; }
-.progress-fill { height: 100%; border-radius: 99px; transition: width .4s; }
-.progress-green  { background: var(--green); }
-.progress-yellow { background: var(--yellow); }
-.progress-red    { background: var(--red); }
-
-/* Buttons */
-.btn { display: inline-flex; align-items: center; gap: var(--sp2); padding: var(--sp2) var(--sp3); border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: opacity .15s; }
-.btn:hover { opacity: .85; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-ghost   { background: transparent; border-color: var(--border); color: var(--text); }
-.btn-danger  { background: var(--red); color: #fff; }
-.btn-sm      { padding: 2px var(--sp2); font-size: 12px; }
-
-/* Forms */
-.form-row { margin-bottom: var(--sp3); }
-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: var(--sp1); }
-input, select { width: 100%; background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp2) var(--sp3); color: var(--text); font-size: 14px; outline: none; transition: border-color .15s; }
-input:focus, select:focus { border-color: var(--accent); }
+code { font-family: ui-monospace, monospace; background: var(--raised); padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 700; }
+.badge { display: inline-flex; align-items: center; justify-content: center; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 800; letter-spacing: .02em; transition: transform 0.3s var(--spring); }
+.badge:hover { transform: scale(1.05); }
+.badge-dark { background: var(--black); color: #fff; }
+.badge-light { background: var(--raised); color: var(--muted); border: 1px solid var(--border); }
+.badge-outline { background: transparent; color: var(--black); border: 2px solid var(--black); }
+.tag { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 8px; background: var(--raised); color: var(--muted); border: 1px solid var(--border); }
+.progress { height: 12px; background: var(--raised); border-radius: 99px; overflow: hidden; min-width: 100px; border: 1px solid var(--border); }
+.progress-fill { height: 100%; border-radius: 99px; background: var(--black); transition: width 1s var(--spring); }
+.progress-fill.warning { background: var(--muted); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 800; font-family: inherit; cursor: pointer; border: none; transition: all 0.4s var(--spring); will-change: transform; }
+.btn:hover { transform: translateY(-2px) scale(1.02); }
+.btn:active { transform: translateY(2px) scale(0.92); }
+.btn-primary { background: var(--black); color: #fff; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+.btn-primary:hover { box-shadow: 0 12px 24px rgba(0,0,0,0.2); }
+.btn-ghost { background: var(--surface); color: var(--text); border: 2px solid var(--border); }
+.btn-ghost:hover { border-color: var(--black); }
+.btn-danger { background: var(--raised); color: var(--text); border: 2px solid var(--border); }
+.btn-danger:hover { background: var(--black); color: #fff; border-color: var(--black); }
+.btn-sm { padding: 8px 16px; font-size: 13px; border-radius: 12px; }
+.form-row { margin-bottom: var(--sp4); }
+label { display: block; font-size: 14px; font-weight: 800; color: var(--muted); margin-bottom: 8px; }
+input, select { width: 100%; background: var(--raised); border: 2px solid transparent; border-radius: var(--radius-sm); padding: 14px 16px; color: var(--text); font-size: 15px; font-weight: 700; font-family: inherit; outline: none; transition: all 0.4s var(--spring); }
+input:focus, select:focus { border-color: var(--black); background: var(--surface); transform: scale(1.01); box-shadow: 0 8px 20px rgba(0,0,0,0.05); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp3); }
-
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
-.modal-overlay.open { display: flex; }
-.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--sp6); width: min(520px, 95vw); }
-.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sp4); }
-.modal-close { cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; }
-.modal-footer { display: flex; justify-content: flex-end; gap: var(--sp2); margin-top: var(--sp4); }
-
-/* Toast */
-#toast { position: fixed; bottom: var(--sp6); right: var(--sp6); background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--sp3) var(--sp4); font-size: 13px; display: none; z-index: 200; max-width: 320px; }
-#toast.show { display: block; }
-
-.tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--raised); color: var(--muted); }
-
-.toolbar { display: flex; gap: var(--sp2); margin-bottom: var(--sp4); align-items: center; flex-wrap: wrap; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: none; align-items: center; justify-content: center; z-index: 100; opacity: 0; transition: opacity 0.3s ease; }
+.modal-overlay.open { display: flex; opacity: 1; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; width: min(560px, 92vw); box-shadow: var(--shadow); transform: scale(0.8) translateY(40px); transition: transform 0.5s var(--spring); max-height: 90vh; overflow-y: auto; }
+.modal-overlay.open .modal { transform: scale(1) translateY(0); }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sp6); }
+.modal-close { cursor: pointer; color: var(--muted); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--raised); font-weight: 900; transition: all 0.4s var(--spring); }
+.modal-close:hover { background: var(--black); color: #fff; transform: rotate(90deg) scale(1.1); }
+.modal-footer { display: flex; justify-content: flex-end; gap: var(--sp3); margin-top: var(--sp6); }
+#toast { position: fixed; bottom: var(--sp6); right: var(--sp6); background: var(--black); color: #fff; border-radius: var(--radius-sm); padding: 16px 24px; font-size: 15px; font-weight: 700; box-shadow: 0 12px 32px rgba(0,0,0,0.2); display: flex; align-items: center; z-index: 200; max-width: 360px; transform: translateY(40px) scale(0.9); opacity: 0; pointer-events: none; transition: all 0.5s var(--spring); }
+#toast.show { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+.toolbar { display: flex; gap: var(--sp3); margin-bottom: var(--sp4); align-items: center; flex-wrap: wrap; }
 .spacer { flex: 1; }
-
-.realm-status { display: flex; align-items: center; gap: var(--sp2); margin-top: auto; padding-top: var(--sp4); border-top: 1px solid var(--border); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
-.dot.running { background: var(--green); }
-
-@media(max-width:700px) {
+.realm-status { display: flex; align-items: center; gap: 12px; margin-top: auto; padding: 20px; background: var(--raised); border-radius: var(--radius-sm); font-weight: 800; transition: all 0.4s var(--spring); }
+.realm-status:hover { transform: scale(1.02); }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border); position: relative; transition: background 0.4s ease; }
+.dot.running { background: var(--black); }
+.dot.running::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--black); animation: pulseQ 2s var(--spring) infinite; }
+@keyframes pulseQ { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+@media(max-width:768px) {
   .shell { grid-template-columns: 1fr; }
-  .sidebar { flex-direction: row; overflow-x: auto; padding: var(--sp3); }
-  .logo { display: none; }
+  .sidebar { flex-direction: row; overflow-x: auto; padding: var(--sp3); border-right: none; border-bottom: 1px solid var(--border); align-items: center; }
+  .logo { margin-bottom: 0; margin-right: var(--sp4); font-size: 0; }
+  .logo::before { width: 24px; height: 24px; }
+  .realm-status { margin-top: 0; padding: 10px 16px; margin-left: auto; }
+  .main { padding: var(--sp4); }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="logo">⚡ Realm 面板</div>
-    <div class="nav-item active" data-page="overview">📊 概览</div>
-    <div class="nav-item" data-page="rules">📋 转发规则</div>
-    <div class="nav-item" data-page="vps">🖥 VPS 管理</div>
-    <div class="nav-item" data-page="weights">⚖️ 权重引擎</div>
+    <div class="logo">Realm</div>
+    <div class="nav-item active" data-page="overview">概览</div>
+    <div class="nav-item" data-page="rules">转发规则</div>
+    <div class="nav-item" data-page="vps">VPS 资产</div>
+    <div class="nav-item" data-page="weights">权重引擎</div>
     <div class="realm-status">
       <div class="dot" id="status-dot"></div>
-      <span id="status-text" style="font-size:12px;color:var(--muted)">检查中...</span>
+      <span id="status-text" style="font-size:14px;color:var(--text)">检查中...</span>
     </div>
   </aside>
 
@@ -128,11 +182,13 @@ input:focus, select:focus { border-color: var(--accent); }
       <h2>概览</h2>
       <div class="stats-row" id="overview-stats"></div>
       <div class="card">
-        <div class="card-title">转发规则 · 快览</div>
-        <table>
-          <thead><tr><th>ID</th><th>监听端口</th><th>目标</th><th>模式</th><th>权重</th><th>状态</th></tr></thead>
-          <tbody id="overview-rules-tbody"></tbody>
-        </table>
+        <div class="card-title">规则快览</div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>ID</th><th>监听端口</th><th>目标</th><th>模式</th><th>权重</th><th>状态</th></tr></thead>
+            <tbody id="overview-rules-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -140,28 +196,34 @@ input:focus, select:focus { border-color: var(--accent); }
     <section class="page" id="page-rules">
       <h2>转发规则</h2>
       <div class="toolbar">
-        <button class="btn btn-primary btn-sm" onclick="openAddRule()">＋ 添加规则</button>
-        <button class="btn btn-ghost btn-sm" onclick="loadRules()">🔄 刷新</button>
+        <button class="btn btn-primary" onclick="openAddRule()">＋ 添加规则</button>
+        <button class="btn btn-ghost" onclick="loadRules()">刷新列表</button>
         <span class="spacer"></span>
       </div>
       <div class="card">
-        <table>
-          <thead><tr><th>ID</th><th>名称</th><th>角色</th><th>监听</th><th>目标 Host</th><th>目标端口</th><th>负载均衡</th><th>故障转移</th><th>状态</th><th>操作</th></tr></thead>
-          <tbody id="rules-tbody"></tbody>
-        </table>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>ID</th><th>名称</th><th>角色</th><th>监听</th><th>目标 Host</th><th>目标端口</th><th>负载均衡</th><th>故障转移</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="rules-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
+
+    <!-- VPS -->
     <section class="page" id="page-vps">
-      <h2>VPS 管理</h2>
+      <h2>VPS 资产</h2>
       <div class="toolbar">
-        <button class="btn btn-primary btn-sm" onclick="openAddVps()">＋ 添加 VPS</button>
-        <button class="btn btn-ghost btn-sm" onclick="loadVps()">🔄 刷新</button>
+        <button class="btn btn-primary" onclick="openAddVps()">添加节点</button>
+        <button class="btn btn-ghost" onclick="loadVps()">刷新数据</button>
       </div>
       <div class="card">
-        <table>
-          <thead><tr><th>Host / IP</th><th>到期日</th><th>剩余天数</th><th>流量用量</th><th>流量剩余</th><th>备注</th><th>操作</th></tr></thead>
-          <tbody id="vps-tbody"></tbody>
-        </table>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Host / IP</th><th>到期日</th><th>剩余天数</th><th>流量用量</th><th>流量剩余</th><th>备注</th><th>操作</th></tr></thead>
+            <tbody id="vps-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -169,55 +231,15 @@ input:focus, select:focus { border-color: var(--accent); }
     <section class="page" id="page-weights">
       <h2>权重引擎</h2>
       <div class="toolbar">
-        <button class="btn btn-primary btn-sm" onclick="triggerRecompute()">▶ 立即重算并应用</button>
-        <button class="btn btn-ghost btn-sm" onclick="loadWeightPreview()">👁 预览权重</button>
+        <button class="btn btn-primary" onclick="triggerRecompute()">立即重算并应用</button>
+        <button class="btn btn-ghost" onclick="loadWeightPreview()">预览权重</button>
       </div>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:var(--sp4)">
-        权重根据每台 VPS 的剩余到期天数和剩余流量百分比动态计算，每 60 秒自动更新一次并软重载 realm。
+      <p style="color:var(--muted);font-size:14px;font-weight:700;margin-bottom:var(--sp6);background:var(--raised);padding:16px 20px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+        权重根据每台 VPS 的剩余到期天数和剩余流量动态计算，每 60 秒自动更新并软重载。
       </p>
       <div id="weight-preview-container"></div>
     </section>
   </main>
-</div>
-
-<!-- Modal: edit VPS -->
-<div class="modal-overlay" id="modal-vps">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="modal-vps-title">添加 VPS 信息</h3>
-      <span class="modal-close" onclick="closeModal('modal-vps')">✕</span>
-    </div>
-    <div class="form-row">
-      <label>Host / IP（唯一标识，与规则中 REMOTE_HOST 保持一致）</label>
-      <input id="vps-host" type="text" placeholder="1.2.3.4 或 example.com">
-    </div>
-    <div class="form-grid">
-      <div class="form-row">
-        <label>到期日期</label>
-        <input id="vps-expire" type="date">
-      </div>
-      <div class="form-row">
-        <label>每月流量上限 (GB，0=不限)</label>
-        <input id="vps-total" type="number" min="0" step="1" value="0">
-      </div>
-      <div class="form-row">
-        <label>已用流量 (GB)</label>
-        <input id="vps-used" type="number" min="0" step="0.1" value="0">
-      </div>
-      <div class="form-row">
-        <label>账单重置日 (每月几号)</label>
-        <input id="vps-reset" type="number" min="1" max="31" value="1">
-      </div>
-    </div>
-    <div class="form-row">
-      <label>备注</label>
-      <input id="vps-note" type="text" placeholder="可选说明">
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-vps')">取消</button>
-      <button class="btn btn-primary" onclick="saveVps()">保存</button>
-    </div>
-  </div>
 </div>
 
 <!-- Modal: add rule -->
@@ -259,9 +281,9 @@ input:focus, select:focus { border-color: var(--accent); }
     <div class="form-row">
       <label>负载均衡模式（多目标时填多个 Host 用逗号分隔）</label>
       <select id="ar-balance">
-        <option value="off">关闭</option>
-        <option value="round_robin">轮询 (round_robin)</option>
-        <option value="ip_hash">IP 哈希 (ip_hash)</option>
+        <option value="off">关闭 (Off)</option>
+        <option value="round_robin">轮询 (Round Robin)</option>
+        <option value="ip_hash">IP 哈希 (IP Hash)</option>
       </select>
     </div>
     <div class="form-row">
@@ -283,33 +305,73 @@ input:focus, select:focus { border-color: var(--accent); }
   </div>
 </div>
 
+<!-- Modal: edit VPS -->
+<div class="modal-overlay" id="modal-vps">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-vps-title">添加 VPS 信息</h3>
+      <span class="modal-close" onclick="closeModal('modal-vps')">✕</span>
+    </div>
+    <div class="form-row">
+      <label>Host / IP（与规则中 REMOTE_HOST 一致）</label>
+      <input id="vps-host" type="text" placeholder="1.2.3.4 或 example.com">
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>到期日期</label>
+        <input id="vps-expire" type="date">
+      </div>
+      <div class="form-row">
+        <label>每月流量上限 (GB，0=不限)</label>
+        <input id="vps-total" type="number" min="0" step="1" value="0">
+      </div>
+      <div class="form-row">
+        <label>已用流量 (GB)</label>
+        <input id="vps-used" type="number" min="0" step="0.1" value="0">
+      </div>
+      <div class="form-row">
+        <label>账单重置日 (每月几号)</label>
+        <input id="vps-reset" type="number" min="1" max="31" value="1">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>备注</label>
+      <input id="vps-note" type="text" placeholder="可选节点说明...">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vps')">取消</button>
+      <button class="btn btn-primary" onclick="saveVps()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: edit rule fields -->
 <div class="modal-overlay" id="modal-rule">
   <div class="modal">
     <div class="modal-header">
-      <h3>编辑规则 <span id="modal-rule-id"></span></h3>
+      <h3>编辑规则 <span id="modal-rule-id" style="color:var(--muted);margin-left:8px;"></span></h3>
       <span class="modal-close" onclick="closeModal('modal-rule')">✕</span>
     </div>
     <div class="form-row">
       <label>负载均衡模式</label>
       <select id="rule-balance">
-        <option value="off">关闭</option>
-        <option value="round_robin">轮询 (round_robin)</option>
-        <option value="ip_hash">IP 哈希 (ip_hash)</option>
+        <option value="off">关闭 (Off)</option>
+        <option value="round_robin">轮询 (Round Robin)</option>
+        <option value="ip_hash">IP 哈希 (IP Hash)</option>
       </select>
     </div>
     <div class="form-row">
       <label>故障转移</label>
       <select id="rule-failover">
-        <option value="false">关闭</option>
-        <option value="true">开启</option>
+        <option value="false">关闭 (Disabled)</option>
+        <option value="true">开启 (Enabled)</option>
       </select>
     </div>
     <div class="form-row">
-      <label>启用</label>
+      <label>规则状态</label>
       <select id="rule-enabled">
-        <option value="true">启用</option>
-        <option value="false">禁用</option>
+        <option value="true">启用 (Active)</option>
+        <option value="false">禁用 (Inactive)</option>
       </select>
     </div>
     <div class="modal-footer">
@@ -328,9 +390,15 @@ const API = window.location.origin + '/api'
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'))
-    document.querySelectorAll('.page').forEach(e => e.classList.remove('active'))
+    document.querySelectorAll('.page').forEach(e => {
+      e.classList.remove('active')
+      e.style.animation = 'none'
+      e.offsetHeight
+    })
     el.classList.add('active')
-    document.getElementById('page-' + el.dataset.page).classList.add('active')
+    const page = document.getElementById('page-' + el.dataset.page)
+    page.classList.add('active')
+    page.style.animation = 'bounceUp 0.6s var(--spring) forwards'
     if (el.dataset.page === 'rules')   loadRules()
     if (el.dataset.page === 'vps')     loadVps()
     if (el.dataset.page === 'weights') loadWeightPreview()
@@ -338,16 +406,17 @@ document.querySelectorAll('.nav-item').forEach(el => {
 })
 
 // ---------- Toast ----------
-function toast(msg, err=false) {
+function toast(msg) {
   const t = document.getElementById('toast')
   t.textContent = msg
-  t.style.borderColor = err ? 'var(--red)' : 'var(--green)'
+  t.classList.remove('show')
+  void t.offsetWidth
   t.classList.add('show')
   setTimeout(() => t.classList.remove('show'), 3000)
 }
 
 // ---------- Modal ----------
-function openModal(id) { document.getElementById(id).classList.add('open') }
+function openModal(id)  { document.getElementById(id).classList.add('open') }
 function closeModal(id) { document.getElementById(id).classList.remove('open') }
 
 // ---------- Realm status ----------
@@ -356,8 +425,9 @@ async function pollStatus() {
     const r = await fetch(API + '/realm/status').then(r => r.json())
     const running = r.state === 'running'
     document.getElementById('status-dot').className = 'dot' + (running ? ' running' : '')
-    document.getElementById('status-text').textContent = running ? 'realm 运行中' : 'realm ' + r.state
-  } catch { }
+    document.getElementById('status-text').textContent = running ? '运行中' : r.state
+    document.getElementById('status-text').style.color = running ? 'var(--black)' : 'var(--muted)'
+  } catch {}
 }
 pollStatus(); setInterval(pollStatus, 10000)
 
@@ -367,9 +437,9 @@ async function loadOverview() {
     fetch(API + '/rules').then(r => r.json()),
     fetch(API + '/vps').then(r => r.json())
   ])
-  const activeRules = rulesRes.filter(r => r.ENABLED === 'true')
-  const lbRules     = rulesRes.filter(r => r.BALANCE_MODE && r.BALANCE_MODE !== 'off')
-  const totalVps    = Object.keys(vpsRes).length
+  const activeRules  = rulesRes.filter(r => r.ENABLED === 'true')
+  const lbRules      = rulesRes.filter(r => r.BALANCE_MODE && r.BALANCE_MODE !== 'off')
+  const totalVps     = Object.keys(vpsRes).length
   const expiringSoon = Object.values(vpsRes).filter(v => {
     if (!v.expire_date) return false
     const d = (new Date(v.expire_date) - new Date()) / 86400000
@@ -377,21 +447,20 @@ async function loadOverview() {
   }).length
 
   document.getElementById('overview-stats').innerHTML = `
-    <div class="card"><div class="card-title">总规则</div><div class="card-value">${rulesRes.length}</div></div>
-    <div class="card"><div class="card-title">启用规则</div><div class="card-value" style="color:var(--green)">${activeRules.length}</div></div>
-    <div class="card"><div class="card-title">负载均衡组</div><div class="card-value" style="color:var(--accent)">${lbRules.length}</div></div>
-    <div class="card"><div class="card-title">VPS 数量</div><div class="card-value">${totalVps}</div></div>
-    <div class="card"><div class="card-title">即将到期 (7天)</div><div class="card-value" style="color:${expiringSoon>0?'var(--yellow)':'var(--text)'}">${expiringSoon}</div></div>
+    <div class="card"><div class="card-title">总规则数</div><div class="card-value">${rulesRes.length}</div></div>
+    <div class="card"><div class="card-title">运行中</div><div class="card-value">${activeRules.length}</div></div>
+    <div class="card"><div class="card-title">负载组</div><div class="card-value">${lbRules.length}</div></div>
+    <div class="card"><div class="card-title">纳管节点</div><div class="card-value">${totalVps}</div></div>
+    <div class="card"><div class="card-title">即将到期</div><div class="card-value" style="color:${expiringSoon>0?'var(--black)':'var(--muted)'}">${expiringSoon}</div></div>
   `
-  const tbody = document.getElementById('overview-rules-tbody')
-  tbody.innerHTML = rulesRes.map(r => `
+  document.getElementById('overview-rules-tbody').innerHTML = rulesRes.map(r => `
     <tr>
-      <td>${r.RULE_ID}</td>
-      <td>${r.LISTEN_PORT}</td>
+      <td><code>#${r.RULE_ID}</code></td>
+      <td style="font-weight:900;font-size:16px">${r.LISTEN_PORT}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${r.REMOTE_HOST || r.FORWARD_TARGET || '-'}</td>
       <td>${balanceBadge(r.BALANCE_MODE)}</td>
       <td><span class="tag">${r.WEIGHTS || '—'}</span></td>
-      <td>${r.ENABLED==='true'?'<span class="badge badge-green">启用</span>':'<span class="badge badge-red">禁用</span>'}</td>
+      <td>${r.ENABLED==='true'?'<span class="badge badge-dark">启用</span>':'<span class="badge badge-light">禁用</span>'}</td>
     </tr>`).join('')
 }
 loadOverview()
@@ -399,36 +468,37 @@ loadOverview()
 // ---------- Rules ----------
 let _editRuleId = null
 function balanceBadge(m) {
-  if (!m || m === 'off') return '<span class="badge badge-yellow">off</span>'
-  return `<span class="badge badge-blue">${m}</span>`
+  if (!m || m === 'off') return '<span class="badge badge-light">Off</span>'
+  return `<span class="badge badge-outline">${m}</span>`
 }
 
 async function loadRules() {
   const rules = await fetch(API + '/rules').then(r => r.json())
-  const tbody = document.getElementById('rules-tbody')
-  tbody.innerHTML = rules.map(r => `
+  document.getElementById('rules-tbody').innerHTML = rules.map(r => `
     <tr>
-      <td>${r.RULE_ID}</td>
-      <td>${r.RULE_NAME || ''}</td>
-      <td>${r.RULE_ROLE==='1'?'中转':'服务端'}</td>
-      <td>${r.LISTEN_PORT}</td>
+      <td><code>#${r.RULE_ID}</code></td>
+      <td style="font-weight:800">${r.RULE_NAME || ''}</td>
+      <td>${r.RULE_ROLE==='1'?'<span class="tag">中转</span>':'<span class="tag">服务端</span>'}</td>
+      <td style="font-weight:900;font-size:16px">${r.LISTEN_PORT}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${r.REMOTE_HOST || r.FORWARD_TARGET || '-'}</td>
       <td>${r.REMOTE_PORT || '-'}</td>
       <td>${balanceBadge(r.BALANCE_MODE)}</td>
-      <td>${r.FAILOVER_ENABLED==='true'?'<span class="badge badge-green">ON</span>':'<span class="badge badge-red">OFF</span>'}</td>
-      <td>${r.ENABLED==='true'?'<span class="badge badge-green">启用</span>':'<span class="badge badge-red">禁用</span>'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="openEditRule(${r.RULE_ID})">编辑</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteRule(${r.RULE_ID})">删除</button></td>
+      <td>${r.FAILOVER_ENABLED==='true'?'<span class="badge badge-dark">ON</span>':'<span class="badge badge-light">OFF</span>'}</td>
+      <td>${r.ENABLED==='true'?'<span class="badge badge-dark">启用</span>':'<span class="badge badge-light">禁用</span>'}</td>
+      <td style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openEditRule(${r.RULE_ID})">编辑</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRule(${r.RULE_ID})">删除</button>
+      </td>
     </tr>`).join('')
 }
 
 function openEditRule(id) {
   _editRuleId = id
   fetch(API + '/rules/' + id).then(r => r.json()).then(r => {
-    document.getElementById('modal-rule-id').textContent = '#' + id
-    document.getElementById('rule-balance').value  = r.BALANCE_MODE  || 'off'
+    document.getElementById('modal-rule-id').textContent  = '#' + id
+    document.getElementById('rule-balance').value  = r.BALANCE_MODE     || 'off'
     document.getElementById('rule-failover').value = r.FAILOVER_ENABLED || 'false'
-    document.getElementById('rule-enabled').value  = r.ENABLED        || 'true'
+    document.getElementById('rule-enabled').value  = r.ENABLED          || 'true'
     openModal('modal-rule')
   })
 }
@@ -441,24 +511,24 @@ async function saveRule() {
   }
   await fetch(API + '/rules/' + _editRuleId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fields}) })
   closeModal('modal-rule')
-  toast('规则已更新，正在触发权重重算...')
+  toast('规则已更新，触发权重重算...')
   await fetch(API + '/weights/recompute', { method: 'POST' })
   loadRules(); loadOverview()
 }
 
 function openAddRule() {
   ['ar-name','ar-lip','ar-rhost','ar-note'].forEach(id => document.getElementById(id).value = '')
-  document.getElementById('ar-lport').value   = ''
-  document.getElementById('ar-rport').value   = ''
-  document.getElementById('ar-role').value    = '1'
-  document.getElementById('ar-balance').value = 'off'
+  document.getElementById('ar-lport').value    = ''
+  document.getElementById('ar-rport').value    = ''
+  document.getElementById('ar-role').value     = '1'
+  document.getElementById('ar-balance').value  = 'off'
   document.getElementById('ar-protocol').value = 'both'
   openModal('modal-add-rule')
 }
 
 async function submitAddRule() {
   const lport = document.getElementById('ar-lport').value.trim()
-  if (!lport) { toast('监听端口为必填项', true); return }
+  if (!lport) { toast('监听端口为必填项'); return }
   const body = {
     RULE_NAME:    document.getElementById('ar-name').value.trim(),
     RULE_ROLE:    document.getElementById('ar-role').value,
@@ -473,7 +543,7 @@ async function submitAddRule() {
   const res = await fetch(API + '/rules', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    toast('创建失败：' + (err.error || res.status), true)
+    toast('创建失败：' + (err.error || res.status))
     return
   }
   closeModal('modal-add-rule')
@@ -484,7 +554,7 @@ async function submitAddRule() {
 async function deleteRule(id) {
   if (!confirm(`确认删除规则 #${id}？此操作不可恢复。`)) return
   const res = await fetch(API + '/rules/' + id, { method: 'DELETE' })
-  if (!res.ok) { toast('删除失败', true); return }
+  if (!res.ok) { toast('删除失败'); return }
   toast('规则 #' + id + ' 已删除')
   loadRules(); loadOverview()
 }
@@ -495,19 +565,18 @@ function daysLeft(expire_date) {
   if (!expire_date) return null
   return Math.ceil((new Date(expire_date) - new Date()) / 86400000)
 }
-function daysColor(d) {
-  if (d === null) return 'var(--muted)'
-  if (d <= 0)  return 'var(--red)'
-  if (d <= 7)  return 'var(--yellow)'
-  return 'var(--green)'
+function formatDays(dl) {
+  if (dl === null) return '<span style="color:var(--muted)">—</span>'
+  if (dl <= 0)     return '<span style="font-weight:900;color:var(--black)">已到期</span>'
+  return `<span style="font-weight:800;color:${dl<=7?'var(--black)':'var(--muted)'}">${dl} 天</span>`
 }
 function trafficBar(used, total) {
-  if (!total || total <= 0) return '<span class="tag">不限</span>'
+  if (!total || total <= 0) return '<span class="tag">不限流量</span>'
   const pct = Math.min(used / total * 100, 100)
-  const cls = pct > 90 ? 'progress-red' : pct > 70 ? 'progress-yellow' : 'progress-green'
-  return `<div style="display:flex;align-items:center;gap:6px">
-    <div class="progress"><div class="progress-fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div>
-    <span style="font-size:11px;color:var(--muted)">${used}/${total}G</span>
+  const cls = pct > 90 ? 'progress-fill warning' : 'progress-fill'
+  return `<div style="display:flex;align-items:center;gap:12px">
+    <div class="progress" style="width:120px"><div class="${cls}" style="width:${pct.toFixed(1)}%"></div></div>
+    <span style="font-size:13px;font-weight:800;min-width:60px">${used}/${total}G</span>
   </div>`
 }
 
@@ -515,18 +584,18 @@ async function loadVps() {
   const data = await fetch(API + '/vps').then(r => r.json())
   const tbody = document.getElementById('vps-tbody')
   const hosts = Object.keys(data)
-  if (!hosts.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:24px">暂无数据，点击"添加 VPS"添加</td></tr>'; return }
+  if (!hosts.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">暂无数据，请添加节点</td></tr>'; return }
   tbody.innerHTML = hosts.map(host => {
-    const m = data[host]
+    const m  = data[host]
     const dl = daysLeft(m.expire_date)
     return `<tr>
       <td><code>${host}</code></td>
-      <td>${m.expire_date || '<span class="tag">未设置</span>'}</td>
-      <td style="color:${daysColor(dl)};font-weight:600">${dl===null?'—':dl<=0?'已到期':dl+'天'}</td>
+      <td style="font-weight:700">${m.expire_date || '<span class="tag">未设置</span>'}</td>
+      <td>${formatDays(dl)}</td>
       <td>${trafficBar(m.traffic_used_gb||0, m.traffic_total_gb||0)}</td>
-      <td>${m.traffic_total_gb>0?Math.max(0,(m.traffic_total_gb||0)-(m.traffic_used_gb||0)).toFixed(1)+'G':'—'}</td>
-      <td style="color:var(--muted);font-size:12px">${m.note||''}</td>
-      <td style="display:flex;gap:4px">
+      <td style="font-weight:900;font-size:15px">${m.traffic_total_gb>0?Math.max(0,(m.traffic_total_gb||0)-(m.traffic_used_gb||0)).toFixed(1)+'G':'—'}</td>
+      <td style="color:var(--muted);font-weight:700">${m.note||'—'}</td>
+      <td style="display:flex;gap:8px">
         <button class="btn btn-ghost btn-sm" onclick='openEditVps(${JSON.stringify(host)})'>编辑</button>
         <button class="btn btn-danger btn-sm" onclick='deleteVps(${JSON.stringify(host)})'>删除</button>
       </td>
@@ -536,7 +605,7 @@ async function loadVps() {
 
 function openAddVps() {
   _editVpsHost = null
-  document.getElementById('modal-vps-title').textContent = '添加 VPS 信息'
+  document.getElementById('modal-vps-title').textContent = '添加新节点'
   document.getElementById('vps-host').value    = ''
   document.getElementById('vps-host').disabled = false
   document.getElementById('vps-expire').value  = ''
@@ -550,7 +619,7 @@ function openAddVps() {
 function openEditVps(host) {
   _editVpsHost = host
   fetch(API + '/vps/' + encodeURIComponent(host)).then(r => r.json()).then(m => {
-    document.getElementById('modal-vps-title').textContent = '编辑 VPS: ' + host
+    document.getElementById('modal-vps-title').textContent = '编辑: ' + host
     document.getElementById('vps-host').value    = host
     document.getElementById('vps-host').disabled = true
     document.getElementById('vps-expire').value  = m.expire_date || ''
@@ -564,7 +633,7 @@ function openEditVps(host) {
 
 async function saveVps() {
   const host = _editVpsHost || document.getElementById('vps-host').value.trim()
-  if (!host) { toast('请输入 Host', true); return }
+  if (!host) { toast('请输入 Host 地址'); return }
   const body = {
     expire_date:      document.getElementById('vps-expire').value,
     traffic_total_gb: parseFloat(document.getElementById('vps-total').value) || 0,
@@ -574,14 +643,14 @@ async function saveVps() {
   }
   await fetch(API + '/vps/' + encodeURIComponent(host), { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
   closeModal('modal-vps')
-  toast('VPS 信息已保存')
+  toast('节点信息已保存')
   loadVps()
 }
 
 async function deleteVps(host) {
-  if (!confirm(`确认删除 ${host} 的 VPS 信息？`)) return
+  if (!confirm(`确认删除节点 ${host} 吗？`)) return
   await fetch(API + '/vps/' + encodeURIComponent(host), { method: 'DELETE' })
-  toast('已删除')
+  toast('节点已移除')
   loadVps()
 }
 
@@ -591,41 +660,47 @@ async function loadWeightPreview() {
   const container = document.getElementById('weight-preview-container')
   const ports = Object.keys(data)
   if (!ports.length) {
-    container.innerHTML = '<div class="card" style="color:var(--muted)">没有启用负载均衡的规则组，或所有组只有单个目标。</div>'
+    container.innerHTML = '<div class="card" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">当前无负载均衡组。</div>'
     return
   }
   container.innerHTML = ports.map(port => `
     <div class="card" style="margin-bottom:var(--sp4)">
-      <div class="card-title">监听端口 ${port}</div>
-      <table>
-        <thead><tr><th>Host</th><th>到期日</th><th>剩余天数</th><th>流量总量</th><th>已用流量</th><th>综合评分</th><th>预估权重比</th></tr></thead>
-        <tbody>
-          ${weightRows(data[port])}
-        </tbody>
-      </table>
+      <div class="card-title" style="color:var(--black);font-size:15px;display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <div style="width:12px;height:12px;background:var(--black);border-radius:4px"></div>
+        端口 <code>${port}</code>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Host 节点</th><th>到期日</th><th>剩余天数</th><th>流量总量</th><th>已用流量</th><th>健康评分</th><th>分配权重</th></tr></thead>
+          <tbody>${weightRows(data[port])}</tbody>
+        </table>
+      </div>
     </div>`).join('')
 }
 
 function weightRows(rows) {
-  if (!rows.length) return '<tr><td colspan="7" style="color:var(--muted)">—</td></tr>'
+  if (!rows.length) return '<tr><td colspan="7" style="color:var(--muted);text-align:center;font-weight:700;">暂无数据</td></tr>'
   const total = rows.reduce((s, r) => s + r.score, 0) || 1
   return rows.map(r => {
-    const pct = Math.round(r.score / total * 100)
+    const pct   = Math.round(r.score / total * 100)
     const dleft = r.remaining_days !== null ? r.remaining_days : '—'
-    const color = r.score === 0 ? 'var(--red)' : r.score < 0.3 ? 'var(--yellow)' : 'var(--green)'
     return `<tr>
       <td><code>${r.host}</code></td>
-      <td>${r.expire_date || '<span class="tag">未设置</span>'}</td>
-      <td style="color:${r.remaining_days<=0?'var(--red)':r.remaining_days<=7?'var(--yellow)':'var(--green)'}">${dleft}</td>
-      <td>${r.traffic_total_gb||'不限'}</td>
-      <td>${r.traffic_used_gb||0} G</td>
-      <td><span style="color:${color};font-weight:700">${r.score}</span></td>
+      <td style="font-weight:700">${r.expire_date || '<span class="tag">未设置</span>'}</td>
+      <td style="font-weight:800;color:${r.remaining_days<=7?'var(--black)':'var(--muted)'}">${dleft}</td>
+      <td style="font-weight:700">${r.traffic_total_gb ? r.traffic_total_gb + ' G' : '<span class="tag">不限</span>'}</td>
+      <td style="font-weight:700">${r.traffic_used_gb||0} G</td>
       <td>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div class="progress" style="width:100px">
-            <div class="progress-fill ${r.score===0?'progress-red':r.score<0.3?'progress-yellow':'progress-green'}" style="width:${pct}%"></div>
+        <div style="display:inline-flex;align-items:center;background:var(--raised);border:1px solid var(--border);border-radius:12px;padding:6px 14px;font-weight:900;font-size:15px;">
+          ${r.score}
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:16px">
+          <div class="progress" style="width:140px;height:16px">
+            <div class="progress-fill ${r.score<0.3?'warning':''}" style="width:${pct}%"></div>
           </div>
-          <span>${pct}%</span>
+          <span style="font-weight:900;min-width:36px;text-align:right">${pct}%</span>
         </div>
       </td>
     </tr>`
@@ -633,11 +708,9 @@ function weightRows(rows) {
 }
 
 async function triggerRecompute() {
-  toast('正在重算权重并应用...')
-  const r = await fetch(API + '/weights/recompute', { method: 'POST' }).then(r => r.json())
-  toast('重算完成，已通知 realm 重载配置')
-  loadWeightPreview()
-  loadOverview()
+  await fetch(API + '/weights/recompute', { method: 'POST' })
+  toast('计算完成，配置已重载')
+  loadWeightPreview(); loadOverview()
 }
 </script>
 </body>
