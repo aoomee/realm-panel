@@ -1,0 +1,34 @@
+services:
+  realm:
+    image: ghcr.io/zhboner/realm:latest
+    container_name: realm
+    restart: unless-stopped
+    network_mode: host          # realm needs full host networking for port binding
+    volumes:
+      - realm_data:/etc/realm
+    command: ["-c", "/etc/realm/config.json"]
+
+  panel:
+    build: ./realm-panel
+    container_name: realm-panel
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - realm_data:/etc/realm
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - RULES_DIR=/etc/realm/rules
+      - META_PATH=/etc/realm/panel/vps_meta.json
+      - CONFIG_JSON=/etc/realm/config.json
+      - REALM_BACKEND=docker
+      - REALM_CONTAINER=realm
+      - WEIGHT_INTERVAL=60       # recompute weights every 60 s
+      - WEIGHT_MAX_DAYS=30       # days until expiry that maps to score=1.0
+      - WEIGHT_W_DAYS=0.5        # weight factor: expiry component
+      - WEIGHT_W_TRAFFIC=0.5     # weight factor: traffic component
+    depends_on:
+      - realm
+
+volumes:
+  realm_data:
