@@ -90,17 +90,6 @@ docker compose up -d
 
 ---
 
-## 初始化规则
-
-面板管理已有规则，不负责创建。首次使用需用原始脚本生成规则：
-
-```bash
-git clone https://github.com/zywe03/realm-xwPF
-bash realm-xwPF/xwPF.sh
-```
-
-规则保存在 `/etc/realm/rules/rule-*.conf`，面板会自动读取。
-
 ---
 
 ## 功能页面

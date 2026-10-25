@@ -90,6 +90,73 @@ def update_rule_fields(rule_id: str, updates: dict) -> bool:
     return True
 
 
+def _next_rule_id() -> int:
+    """Return the next available numeric rule ID."""
+    existing = []
+    for path in glob.glob(os.path.join(RULES_DIR, "rule-*.conf")):
+        name = os.path.basename(path)
+        m = re.match(r"rule-(\d+)\.conf", name)
+        if m:
+            existing.append(int(m.group(1)))
+    return max(existing, default=0) + 1
+
+
+def create_rule(fields: dict) -> dict:
+    """
+    Create a new rule-*.conf file.  Required keys in `fields`:
+      LISTEN_PORT, REMOTE_HOST (or FORWARD_TARGET for RULE_ROLE=2), REMOTE_PORT
+    Optional: RULE_NAME, RULE_ROLE (default "1"), LISTEN_IP, BALANCE_MODE, ...
+    Returns the newly created rule dict.
+    """
+    import datetime as _dt
+    os.makedirs(RULES_DIR, exist_ok=True)
+    rule_id = _next_rule_id()
+    path = os.path.join(RULES_DIR, f"rule-{rule_id}.conf")
+
+    defaults = {
+        "RULE_ID":               str(rule_id),
+        "RULE_NAME":             fields.get("RULE_NAME", f"rule-{rule_id}"),
+        "RULE_ROLE":             fields.get("RULE_ROLE", "1"),
+        "SECURITY_LEVEL":        fields.get("SECURITY_LEVEL", "standard"),
+        "LISTEN_PORT":           fields.get("LISTEN_PORT", ""),
+        "LISTEN_IP":             fields.get("LISTEN_IP", "::"),
+        "THROUGH_IP":            fields.get("THROUGH_IP", ""),
+        "REMOTE_HOST":           fields.get("REMOTE_HOST", ""),
+        "REMOTE_PORT":           fields.get("REMOTE_PORT", ""),
+        "FORWARD_TARGET":        fields.get("FORWARD_TARGET", ""),
+        "TLS_SERVER_NAME":       fields.get("TLS_SERVER_NAME", ""),
+        "WS_PATH":               fields.get("WS_PATH", ""),
+        "WS_HOST":               fields.get("WS_HOST", ""),
+        "RULE_NOTE":             fields.get("RULE_NOTE", ""),
+        "ENABLED":               "true",
+        "CREATED_TIME":          _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "BALANCE_MODE":          fields.get("BALANCE_MODE", "off"),
+        "TARGET_STATES":         "",
+        "WEIGHTS":               fields.get("WEIGHTS", ""),
+        "FAILOVER_ENABLED":      "false",
+        "HEALTH_CHECK_INTERVAL": "4",
+        "FAILURE_THRESHOLD":     "2",
+        "SUCCESS_THRESHOLD":     "2",
+        "CONNECTION_TIMEOUT":    "3",
+        "MPTCP_MODE":            "off",
+        "PROXY_MODE":            "off",
+        "PROTOCOL":              fields.get("PROTOCOL", "both"),
+    }
+
+    lines = [f'{k}="{v}"' for k, v in defaults.items()]
+    Path(path).write_text("\n".join(lines) + "\n")
+    return _parse_conf(path)
+
+
+def delete_rule(rule_id: str) -> bool:
+    """Delete a rule-*.conf file. Returns False if not found."""
+    path = os.path.join(RULES_DIR, f"rule-{rule_id}.conf")
+    if not os.path.exists(path):
+        return False
+    os.remove(path)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # VPS metadata (expiry + traffic quota)
 # ---------------------------------------------------------------------------

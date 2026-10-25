@@ -2,18 +2,20 @@
 HTTP API for the realm panel.
 
 Endpoints
-  GET  /api/health
-  GET  /api/rules
-  GET  /api/rules/<id>
-  PUT  /api/rules/<id>          body: { fields: { KEY: value, ... } }
-  GET  /api/vps                 list all VPS metadata
-  GET  /api/vps/<host>          get one host's metadata
-  PUT  /api/vps/<host>          upsert metadata fields
+  GET    /api/health
+  GET    /api/rules
+  POST   /api/rules                body: { LISTEN_PORT, REMOTE_HOST, REMOTE_PORT, ... }
+  GET    /api/rules/<id>
+  PUT    /api/rules/<id>           body: { fields: { KEY: value, ... } }
+  DELETE /api/rules/<id>
+  GET    /api/vps                  list all VPS metadata
+  GET    /api/vps/<host>           get one host's metadata
+  PUT    /api/vps/<host>           upsert metadata fields
   DELETE /api/vps/<host>
-  GET  /api/weights/preview     dry-run: shows computed scores/weights
-  POST /api/weights/recompute   run engine now + reload realm
-  GET  /api/realm/status
-  POST /api/realm/restart
+  GET    /api/weights/preview      dry-run: shows computed scores/weights
+  POST   /api/weights/recompute    run engine now + reload realm
+  GET    /api/realm/status
+  POST   /api/realm/restart
 """
 import logging
 from datetime import date, datetime
@@ -68,6 +70,29 @@ def update_rule(rule_id):
     ok = config_io.update_rule_fields(str(rule_id), fields)
     if not ok:
         return jsonify({"error": "rule not found"}), 404
+    return jsonify({"ok": True})
+
+
+@bp.post("/rules")
+def create_rule():
+    body = request.get_json(force=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+    if not body.get("LISTEN_PORT"):
+        return jsonify({"error": "LISTEN_PORT is required"}), 400
+    rule = config_io.create_rule(body)
+    config_io.regenerate_config()
+    reload_realm()
+    return jsonify(rule), 201
+
+
+@bp.delete("/rules/<int:rule_id>")
+def delete_rule(rule_id):
+    ok = config_io.delete_rule(str(rule_id))
+    if not ok:
+        return jsonify({"error": "rule not found"}), 404
+    config_io.regenerate_config()
+    reload_realm()
     return jsonify({"ok": True})
 
 

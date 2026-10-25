@@ -140,6 +140,7 @@ input:focus, select:focus { border-color: var(--accent); }
     <section class="page" id="page-rules">
       <h2>转发规则</h2>
       <div class="toolbar">
+        <button class="btn btn-primary btn-sm" onclick="openAddRule()">＋ 添加规则</button>
         <button class="btn btn-ghost btn-sm" onclick="loadRules()">🔄 刷新</button>
         <span class="spacer"></span>
       </div>
@@ -150,8 +151,6 @@ input:focus, select:focus { border-color: var(--accent); }
         </table>
       </div>
     </section>
-
-    <!-- VPS -->
     <section class="page" id="page-vps">
       <h2>VPS 管理</h2>
       <div class="toolbar">
@@ -217,6 +216,69 @@ input:focus, select:focus { border-color: var(--accent); }
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-vps')">取消</button>
       <button class="btn btn-primary" onclick="saveVps()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: add rule -->
+<div class="modal-overlay" id="modal-add-rule">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>添加转发规则</h3>
+      <span class="modal-close" onclick="closeModal('modal-add-rule')">✕</span>
+    </div>
+    <div class="form-row">
+      <label>规则名称（可选）</label>
+      <input id="ar-name" type="text" placeholder="如：HK中转">
+    </div>
+    <div class="form-row">
+      <label>角色</label>
+      <select id="ar-role">
+        <option value="1">中转（NAT 规则，本机监听转发到远端）</option>
+        <option value="2">服务端（出口规则）</option>
+      </select>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>监听端口（本机）</label>
+        <input id="ar-lport" type="number" min="1" max="65535" placeholder="如：10080">
+      </div>
+      <div class="form-row">
+        <label>监听 IP（留空=所有网卡）</label>
+        <input id="ar-lip" type="text" placeholder=":: 或 0.0.0.0">
+      </div>
+      <div class="form-row">
+        <label>目标 Host / IP</label>
+        <input id="ar-rhost" type="text" placeholder="1.2.3.4 或 example.com">
+      </div>
+      <div class="form-row">
+        <label>目标端口</label>
+        <input id="ar-rport" type="number" min="1" max="65535" placeholder="如：443">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>负载均衡模式（多目标时填多个 Host 用逗号分隔）</label>
+      <select id="ar-balance">
+        <option value="off">关闭</option>
+        <option value="round_robin">轮询 (round_robin)</option>
+        <option value="ip_hash">IP 哈希 (ip_hash)</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>协议</label>
+      <select id="ar-protocol">
+        <option value="both">both（TCP+UDP）</option>
+        <option value="tcp">仅 TCP</option>
+        <option value="udp">仅 UDP</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>备注</label>
+      <input id="ar-note" type="text" placeholder="可选">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-rule')">取消</button>
+      <button class="btn btn-primary" onclick="submitAddRule()">创建</button>
     </div>
   </div>
 </div>
@@ -355,7 +417,8 @@ async function loadRules() {
       <td>${balanceBadge(r.BALANCE_MODE)}</td>
       <td>${r.FAILOVER_ENABLED==='true'?'<span class="badge badge-green">ON</span>':'<span class="badge badge-red">OFF</span>'}</td>
       <td>${r.ENABLED==='true'?'<span class="badge badge-green">启用</span>':'<span class="badge badge-red">禁用</span>'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="openEditRule(${r.RULE_ID})">编辑</button></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openEditRule(${r.RULE_ID})">编辑</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteRule(${r.RULE_ID})">删除</button></td>
     </tr>`).join('')
 }
 
@@ -380,6 +443,49 @@ async function saveRule() {
   closeModal('modal-rule')
   toast('规则已更新，正在触发权重重算...')
   await fetch(API + '/weights/recompute', { method: 'POST' })
+  loadRules(); loadOverview()
+}
+
+function openAddRule() {
+  ['ar-name','ar-lip','ar-rhost','ar-note'].forEach(id => document.getElementById(id).value = '')
+  document.getElementById('ar-lport').value   = ''
+  document.getElementById('ar-rport').value   = ''
+  document.getElementById('ar-role').value    = '1'
+  document.getElementById('ar-balance').value = 'off'
+  document.getElementById('ar-protocol').value = 'both'
+  openModal('modal-add-rule')
+}
+
+async function submitAddRule() {
+  const lport = document.getElementById('ar-lport').value.trim()
+  if (!lport) { toast('监听端口为必填项', true); return }
+  const body = {
+    RULE_NAME:    document.getElementById('ar-name').value.trim(),
+    RULE_ROLE:    document.getElementById('ar-role').value,
+    LISTEN_PORT:  lport,
+    LISTEN_IP:    document.getElementById('ar-lip').value.trim() || '::',
+    REMOTE_HOST:  document.getElementById('ar-rhost').value.trim(),
+    REMOTE_PORT:  document.getElementById('ar-rport').value.trim(),
+    BALANCE_MODE: document.getElementById('ar-balance').value,
+    PROTOCOL:     document.getElementById('ar-protocol').value,
+    RULE_NOTE:    document.getElementById('ar-note').value.trim(),
+  }
+  const res = await fetch(API + '/rules', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    toast('创建失败：' + (err.error || res.status), true)
+    return
+  }
+  closeModal('modal-add-rule')
+  toast('规则已创建，realm 正在热重载...')
+  loadRules(); loadOverview()
+}
+
+async function deleteRule(id) {
+  if (!confirm(`确认删除规则 #${id}？此操作不可恢复。`)) return
+  const res = await fetch(API + '/rules/' + id, { method: 'DELETE' })
+  if (!res.ok) { toast('删除失败', true); return }
+  toast('规则 #' + id + ' 已删除')
   loadRules(); loadOverview()
 }
 
