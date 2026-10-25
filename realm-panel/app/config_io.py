@@ -141,6 +141,8 @@ def create_rule(fields: dict) -> dict:
         "MPTCP_MODE":            "off",
         "PROXY_MODE":            "off",
         "PROTOCOL":              fields.get("PROTOCOL", "both"),
+        # "" = local machine (A, the panel host); otherwise a node id from nodes.json
+        "NODE_ID":               str(fields.get("NODE_ID", "") or ""),
     }
 
     lines = [f'{k}="{v}"' for k, v in defaults.items()]
@@ -270,19 +272,44 @@ def _build_transport(rule: dict, security: str) -> dict:
     return t
 
 
-def regenerate_config():
-    """Rebuild /etc/realm/config.json from rule files."""
-    rules = list_rules()
-    endpoint_parts = []
-    for r in rules:
+def build_config(node_id: str = "") -> dict:
+    """
+    Build a realm config dict containing only the rules assigned to
+    `node_id` ("" = the local panel host A).
+    """
+    endpoints = []
+    for r in list_rules():
+        if (r.get("NODE_ID", "") or "") != (node_id or ""):
+            continue
         ep = _rule_to_endpoint(r)
         if ep:
-            endpoint_parts.append(f"\n        {ep}")
-
-    endpoints_str = ",".join(endpoint_parts)
-    config = {
+            endpoints.append(json.loads(ep))
+    return {
         "network": {"no_tcp": False, "use_udp": True},
-        "endpoints": json.loads(f"[{endpoints_str}]") if endpoints_str.strip() else []
+        "endpoints": endpoints,
     }
+
+
+def regenerate_config(push_to_nodes: bool = True):
+    """
+    Rebuild the local /etc/realm/config.json (rules with NODE_ID == "")
+    and, if push_to_nodes is True, push each enabled remote node a config
+    containing only its own rules. Push failures are non-fatal.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    config = build_config("")
     os.makedirs(os.path.dirname(CONFIG_JSON), exist_ok=True)
     Path(CONFIG_JSON).write_text(json.dumps(config, indent=4, ensure_ascii=False))
+
+    if push_to_nodes:
+        try:
+            from . import node_client as _nc
+            results = _nc.push_config_to_all()
+            if results:
+                ok_count  = sum(1 for r in results.values() if r.get("ok"))
+                _log.info("config pushed to %d/%d nodes", ok_count, len(results))
+        except Exception as e:
+            # Push failures are non-fatal — local config.json is already updated
+            _log.warning("node push failed (non-fatal): %s", e)

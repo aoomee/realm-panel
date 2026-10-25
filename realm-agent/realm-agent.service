@@ -1,0 +1,26 @@
+[Unit]
+Description=Realm Relay Agent (HTTP config receiver)
+After=network-online.target realm.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment="AGENT_TOKEN=CHANGE_ME_TO_A_LONG_RANDOM_TOKEN"
+Environment="AGENT_PORT=5001"
+Environment="REALM_CONFIG=/etc/realm/config.json"
+Environment="REALM_SERVICE=realm"
+# Token can also be loaded from a file to keep it out of `systemctl show`:
+# EnvironmentFile=/etc/realm/agent.env
+ExecStart=/usr/local/bin/realm-agent
+Restart=on-failure
+RestartSec=3
+# Agent needs to write /etc/realm/config.json and signal realm — run as root
+User=root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

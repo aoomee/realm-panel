@@ -20,6 +20,15 @@ Endpoints
   POST   /api/monitor/probe        trigger immediate host probe
   POST   /api/monitor/selftest     run selftest on all enabled rules
   POST   /api/monitor/selftest/<id> run selftest on one rule
+  GET    /api/nodes                list all relay/exit nodes
+  POST   /api/nodes                register a new node
+  GET    /api/nodes/<id>           get one node
+  PUT    /api/nodes/<id>           update node fields
+  DELETE /api/nodes/<id>           remove a node
+  POST   /api/nodes/<id>/push      push the node its own rules (NODE_ID == id)
+  POST   /api/nodes/push-all       push each enabled node its own rules
+  GET    /api/nodes/<id>/config    preview a node's config ("local" = machine A)
+  GET    /api/nodes/<id>/health    probe one node's /health endpoint
 """
 import logging
 from datetime import date, datetime
@@ -31,6 +40,8 @@ from .realm_ctrl import restart_realm, reload_realm
 from .weight_engine import recalculate_weights, _score_host, _remaining_days, _traffic_fraction
 from .scheduler import trigger_now
 from . import monitor as mon
+from . import node_io
+from . import node_client
 
 log = logging.getLogger(__name__)
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -223,3 +234,85 @@ def monitor_selftest_one(rule_id):
     if "error" in result:
         return jsonify(result), 404
     return jsonify(result)
+
+
+# --------------------------- node registry ---------------------------
+
+@bp.get("/nodes")
+def get_nodes():
+    return jsonify(node_io.list_nodes())
+
+
+@bp.post("/nodes")
+def create_node():
+    body = request.get_json(force=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+    if not body.get("url"):
+        return jsonify({"error": "url is required"}), 400
+    if not body.get("token"):
+        return jsonify({"error": "token is required"}), 400
+    node = node_io.create_node(body)
+    return jsonify(node), 201
+
+
+@bp.get("/nodes/<node_id>")
+def get_node(node_id):
+    node = node_io.get_node(node_id)
+    if node is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(node)
+
+
+@bp.put("/nodes/<node_id>")
+def update_node(node_id):
+    body = request.get_json(force=True)
+    if not isinstance(body, dict) or not body:
+        return jsonify({"error": "no fields provided"}), 400
+    node = node_io.update_node(node_id, body)
+    if node is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(node)
+
+
+@bp.delete("/nodes/<node_id>")
+def delete_node(node_id):
+    ok = node_io.delete_node(node_id)
+    if not ok:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True})
+
+
+@bp.post("/nodes/<node_id>/push")
+def push_one_node(node_id):
+    """Push this node its own config (only rules assigned to it)."""
+    if node_io.get_node(node_id) is None:
+        return jsonify({"error": "not found"}), 404
+    result = node_client.push_node(node_id)
+    code = 200 if result.get("ok") else 502
+    return jsonify(result), code
+
+
+@bp.post("/nodes/push-all")
+def push_all_nodes():
+    """Push every enabled node its own filtered config."""
+    results = node_client.push_config_to_all()
+    all_ok = all(v.get("ok") or v.get("skipped") for v in results.values())
+    return jsonify({"ok": all_ok, "results": results})
+
+
+@bp.get("/nodes/<node_id>/config")
+def node_config_preview(node_id):
+    """Preview the config that would be pushed to a node ("local" = machine A)."""
+    nid = "" if node_id == "local" else node_id
+    return jsonify(config_io.build_config(nid))
+
+
+@bp.get("/nodes/<node_id>/health")
+def node_health(node_id):
+    node = node_io.get_node(node_id)
+    if node is None:
+        return jsonify({"error": "not found"}), 404
+    result = node_client.health_node(node)
+    code = 200 if result.get("ok") else 502
+    return jsonify(result), code

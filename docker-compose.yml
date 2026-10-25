@@ -31,6 +31,8 @@ services:
       - MONITOR_TIMEOUT=3        # TCP probe timeout (seconds)
       - MONITOR_RING=20          # latency history ring size per host
       - MONITOR_PATH=/etc/realm/panel/monitor.json
+      - NODES_PATH=/etc/realm/panel/nodes.json   # remote agent registry
+      - NODE_PUSH_TIMEOUT=8      # per-node HTTP push timeout (seconds)
     depends_on:
       - realm
 

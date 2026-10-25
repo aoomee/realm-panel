@@ -171,6 +171,7 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
     <div class="nav-item" data-page="vps">VPS 资产</div>
     <div class="nav-item" data-page="weights">权重引擎</div>
     <div class="nav-item" data-page="monitor">链路监控</div>
+    <div class="nav-item" data-page="nodes">节点管理</div>
     <div class="realm-status">
       <div class="dot" id="status-dot"></div>
       <span id="status-text" style="font-size:14px;color:var(--text)">检查中...</span>
@@ -204,7 +205,7 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
       <div class="card">
         <div class="table-wrapper">
           <table>
-            <thead><tr><th>ID</th><th>名称</th><th>角色</th><th>监听</th><th>目标 Host</th><th>目标端口</th><th>负载均衡</th><th>故障转移</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>ID</th><th>名称</th><th>角色</th><th>监听</th><th>目标 Host</th><th>目标端口</th><th>节点</th><th>负载均衡</th><th>故障转移</th><th>状态</th><th>操作</th></tr></thead>
             <tbody id="rules-tbody"></tbody>
           </table>
         </div>
@@ -262,6 +263,27 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
         权重根据每台 VPS 的剩余到期天数和剩余流量动态计算，每 60 秒自动更新并软重载。
       </p>
       <div id="weight-preview-container"></div>
+    </section>
+
+    <!-- NODES -->
+    <section class="page" id="page-nodes">
+      <h2>节点管理</h2>
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="openAddNode()">＋ 添加节点</button>
+        <button class="btn btn-ghost"   onclick="loadNodes()">刷新列表</button>
+        <button class="btn btn-ghost"   onclick="pushAllNodes()">推送配置到全部节点</button>
+      </div>
+      <p style="color:var(--muted);font-size:14px;font-weight:700;margin-bottom:var(--sp4);background:var(--raised);padding:16px 20px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+        在每台中转机/落地机上运行 realm-agent，填入 URL 和 Token 即可从面板统一推送配置并触发热重载。
+      </p>
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>名称</th><th>角色</th><th>Agent URL</th><th>状态</th><th>最近推送</th><th>备注</th><th>操作</th></tr></thead>
+            <tbody id="nodes-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </main>
 </div>
@@ -321,6 +343,10 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
     <div class="form-row">
       <label>备注</label>
       <input id="ar-note" type="text" placeholder="可选">
+    </div>
+    <div class="form-row">
+      <label>所属节点</label>
+      <select id="ar-node"><option value="">本机 (A)</option></select>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-rule')">取消</button>
@@ -407,6 +433,50 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
 
 <div id="toast"></div>
 
+<!-- Modal: add / edit node -->
+<div class="modal-overlay" id="modal-node">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-node-title">添加中转节点</h3>
+      <span class="modal-close" onclick="closeModal('modal-node')">✕</span>
+    </div>
+    <div class="form-row">
+      <label>节点名称</label>
+      <input id="node-name" type="text" placeholder="如：HK中转-01">
+    </div>
+    <div class="form-row">
+      <label>角色</label>
+      <select id="node-role">
+        <option value="relay">中转机 (relay)</option>
+        <option value="exit">落地机 (exit)</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Agent URL（含端口，不含路径）</label>
+      <input id="node-url" type="text" placeholder="http://1.2.3.4:5001">
+    </div>
+    <div class="form-row">
+      <label>Token（与 Agent AGENT_TOKEN 一致）</label>
+      <input id="node-token" type="text" placeholder="长随机字符串">
+    </div>
+    <div class="form-row">
+      <label>状态</label>
+      <select id="node-enabled">
+        <option value="true">启用</option>
+        <option value="false">禁用</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>备注</label>
+      <input id="node-note" type="text" placeholder="可选">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-node')">取消</button>
+      <button class="btn btn-primary" onclick="saveNode()">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = window.location.origin + '/api'
 
@@ -427,6 +497,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
     if (el.dataset.page === 'vps')     loadVps()
     if (el.dataset.page === 'weights') loadWeightPreview()
     if (el.dataset.page === 'monitor') loadMonitor()
+    if (el.dataset.page === 'nodes')   loadNodes()
   })
 })
 
@@ -507,6 +578,7 @@ async function loadRules() {
       <td style="font-weight:900;font-size:16px">${r.LISTEN_PORT}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${r.REMOTE_HOST || r.FORWARD_TARGET || '-'}</td>
       <td>${r.REMOTE_PORT || '-'}</td>
+      <td>${nodeName(r.NODE_ID || '')}</td>
       <td>${balanceBadge(r.BALANCE_MODE)}</td>
       <td>${r.FAILOVER_ENABLED==='true'?'<span class="badge badge-dark">ON</span>':'<span class="badge badge-light">OFF</span>'}</td>
       <td>${r.ENABLED==='true'?'<span class="badge badge-dark">启用</span>':'<span class="badge badge-light">禁用</span>'}</td>
@@ -548,6 +620,7 @@ function openAddRule() {
   document.getElementById('ar-role').value     = '1'
   document.getElementById('ar-balance').value  = 'off'
   document.getElementById('ar-protocol').value = 'both'
+  fillNodeSelect('ar-node', '')
   openModal('modal-add-rule')
 }
 
@@ -564,6 +637,7 @@ async function submitAddRule() {
     BALANCE_MODE: document.getElementById('ar-balance').value,
     PROTOCOL:     document.getElementById('ar-protocol').value,
     RULE_NOTE:    document.getElementById('ar-note').value.trim(),
+    NODE_ID:      document.getElementById('ar-node').value,
   }
   const res = await fetch(API + '/rules', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
   if (!res.ok) {
@@ -843,6 +917,143 @@ function renderMonitorRules(rules) {
   }
   container.innerHTML = keys.map(k => ruleCard(rules[k])).join('')
 }
+
+// ---------- Nodes ----------
+let _editNodeId = null
+let _nodesCache = {}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+
+async function fetchNodes() {
+  _nodesCache = await fetch(API + '/nodes').then(r => r.json()).catch(() => ({}))
+  return _nodesCache
+}
+
+function nodeName(id) {
+  if (!id) return '本机 (A)'
+  const n = _nodesCache[id]
+  return n ? (n.name || n.id) : id + ' (已删除)'
+}
+
+function fillNodeSelect(selId, current) {
+  const sel = document.getElementById(selId)
+  const opts = ['<option value="">本机 (面板所在机器)</option>']
+  Object.values(_nodesCache).forEach(n => {
+    opts.push(`<option value="${esc(n.id)}">${esc(n.name || n.id)} · ${n.role === 'exit' ? '落地' : '中转'}</option>`)
+  })
+  sel.innerHTML = opts.join('')
+  sel.value = current || ''
+}
+
+async function loadNodes() {
+  const nodes = await fetchNodes()
+  const tbody = document.getElementById('nodes-tbody')
+  const ids = Object.keys(nodes)
+  if (!ids.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">暂无节点，先在中转机上安装 realm-agent 再添加</td></tr>'
+    return
+  }
+  tbody.innerHTML = ids.map(id => {
+    const n = nodes[id]
+    const push = n.last_push
+      ? `${n.last_push_ok ? '<span class="badge badge-dark">成功</span>' : '<span class="badge badge-outline">失败</span>'}
+         <div style="color:var(--muted);font-size:12px;font-weight:700;margin-top:4px">${esc(n.last_push.replace('T',' ').slice(0,19))}</div>`
+      : '<span class="tag">未推送</span>'
+    return `<tr>
+      <td style="font-weight:900">${esc(n.name || n.id)}<div style="color:var(--muted);font-size:12px">${esc(n.id)}</div></td>
+      <td><span class="tag">${n.role === 'exit' ? '落地机' : '中转机'}</span></td>
+      <td><code>${esc(n.url)}</code></td>
+      <td id="node-health-${esc(id)}">${n.enabled === 'true' ? '<span class="tag">检测中…</span>' : '<span class="badge badge-light">禁用</span>'}</td>
+      <td>${push}</td>
+      <td style="color:var(--muted);font-weight:700">${esc(n.note || '—')}</td>
+      <td style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick='pushNode(${JSON.stringify(id)})'>推送</button>
+        <button class="btn btn-ghost btn-sm" onclick='openEditNode(${JSON.stringify(id)})'>编辑</button>
+        <button class="btn btn-danger btn-sm" onclick='deleteNode(${JSON.stringify(id)})'>删除</button>
+      </td>
+    </tr>`
+  }).join('')
+  // health check each enabled node in parallel
+  ids.filter(id => nodes[id].enabled === 'true').forEach(async id => {
+    const cell = document.getElementById('node-health-' + id)
+    try {
+      const r = await fetch(API + '/nodes/' + encodeURIComponent(id) + '/health').then(r => r.json())
+      if (!cell) return
+      if (r.ok) {
+        cell.innerHTML = r.realm && r.realm.running
+          ? '<span class="badge badge-dark">在线 · realm 运行</span>'
+          : '<span class="badge badge-outline">在线 · realm 未运行</span>'
+      } else {
+        cell.innerHTML = `<span class="badge badge-light" title="${esc(r.error)}">离线</span>`
+      }
+    } catch { if (cell) cell.innerHTML = '<span class="badge badge-light">离线</span>' }
+  })
+}
+
+function openAddNode() {
+  _editNodeId = null
+  document.getElementById('modal-node-title').textContent = '添加节点'
+  ;['node-name','node-url','node-token','node-note'].forEach(i => document.getElementById(i).value = '')
+  document.getElementById('node-role').value = 'relay'
+  document.getElementById('node-enabled').value = 'true'
+  openModal('modal-node')
+}
+
+function openEditNode(id) {
+  const n = _nodesCache[id]; if (!n) return
+  _editNodeId = id
+  document.getElementById('modal-node-title').textContent = '编辑: ' + (n.name || id)
+  document.getElementById('node-name').value    = n.name || ''
+  document.getElementById('node-role').value    = n.role || 'relay'
+  document.getElementById('node-url').value     = n.url || ''
+  document.getElementById('node-token').value   = n.token || ''
+  document.getElementById('node-enabled').value = n.enabled || 'true'
+  document.getElementById('node-note').value    = n.note || ''
+  openModal('modal-node')
+}
+
+async function saveNode() {
+  const body = {
+    name:    document.getElementById('node-name').value.trim(),
+    role:    document.getElementById('node-role').value,
+    url:     document.getElementById('node-url').value.trim(),
+    token:   document.getElementById('node-token').value.trim(),
+    enabled: document.getElementById('node-enabled').value,
+    note:    document.getElementById('node-note').value.trim(),
+  }
+  if (!body.url || !body.token) { toast('URL 和 Token 为必填项'); return }
+  const url = _editNodeId ? API + '/nodes/' + encodeURIComponent(_editNodeId) : API + '/nodes'
+  const res = await fetch(url, { method: _editNodeId ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); toast('保存失败：' + (e.error || res.status)); return }
+  closeModal('modal-node')
+  toast('节点已保存')
+  loadNodes()
+}
+
+async function deleteNode(id) {
+  if (!confirm(`确认删除节点 ${nodeName(id)}？绑定到该节点的规则将不再下发。`)) return
+  await fetch(API + '/nodes/' + encodeURIComponent(id), { method: 'DELETE' })
+  toast('节点已删除')
+  loadNodes()
+}
+
+async function pushNode(id) {
+  toast('推送中…')
+  const r = await fetch(API + '/nodes/' + encodeURIComponent(id) + '/push', { method: 'POST' }).then(r => r.json())
+  toast(r.ok ? `已推送到 ${nodeName(id)}` : '推送失败：' + (r.error || '未知错误'))
+  loadNodes()
+}
+
+async function pushAllNodes() {
+  toast('正在推送到全部节点…')
+  const r = await fetch(API + '/nodes/push-all', { method: 'POST' }).then(r => r.json())
+  const res = r.results || {}
+  const total = Object.values(res).filter(v => !v.skipped).length
+  const ok = Object.values(res).filter(v => v.ok).length
+  toast(`推送完成：${ok}/${total} 成功`)
+  loadNodes()
+}
+
+fetchNodes()
 </script>
 </body>
 </html>
