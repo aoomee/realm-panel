@@ -1,134 +1,100 @@
 # realm-panel
 
-Docker-based web management panel for [Realm](https://github.com/zhboner/realm) port-forwarding rules, with dynamic weight adjustment driven by VPS expiry time and remaining traffic quota.
+基于 Docker 的 [Realm](https://github.com/zhboner/realm) 转发规则管理面板，支持根据 VPS 到期时间和剩余流量动态调整负载均衡权重。
 
-## Architecture
+---
 
-```
-┌─────────────────────────────────┐
-│  realm container (host network) │  ← actual port forwarder
-│  image: ghcr.io/zhboner/realm   │
-└────────────┬────────────────────┘
-             │ shared volume: /etc/realm
-┌────────────▼────────────────────┐
-│  panel container  :5000         │  ← Flask web UI + API
-│  - rule CRUD                    │
-│  - VPS metadata store           │
-│  - weight engine (60 s cron)    │
-│  - realm restart via Docker SDK │
-└─────────────────────────────────┘
-```
-
-## Quick start
+## 安装 Docker
 
 ```bash
-git clone https://github.com/zywe03/realm-xwPF
-cd realm-xwPF
+curl -fsSL https://get.docker.com | sh
+```
+
+## 安装 Docker Compose
+
+```bash
+# Docker Desktop 已内置；纯 Linux 服务器执行：
+apt-get install -y docker-compose-plugin   # Debian/Ubuntu
+# 或
+yum install -y docker-compose-plugin       # CentOS/RHEL
+```
+
+验证：
+
+```bash
+docker -v && docker compose version
+```
+
+---
+
+## 快速部署
+
+```bash
+git clone https://github.com/aoomee/realm-panel
+cd realm-panel
 docker compose up -d
 ```
 
-Open **http://your-server:5000** in a browser.
+浏览器打开 `http://你的服务器IP:5000`
 
-> The panel port is 5000 by default.  
-> To change it, edit the `ports` entry in `docker-compose.yml` before starting.
+> 如需修改端口，编辑 `docker-compose.yml` 中 `ports` 字段再启动。
 
-## Initial rule setup
+---
 
-The panel manages existing Realm rules but does not create them from scratch.  
-Use the original `xwPF.sh` script once to bootstrap your rules:
+## 初始化规则
+
+面板管理已有规则，不负责创建。首次使用需用原始脚本生成规则：
 
 ```bash
-bash xwPF.sh
+git clone https://github.com/zywe03/realm-xwPF
+bash realm-xwPF/xwPF.sh
 ```
 
-Rules are stored in `/etc/realm/rules/rule-*.conf` on the shared volume and will immediately appear in the panel.
+规则保存在 `/etc/realm/rules/rule-*.conf`，面板会自动读取。
 
-## Panel pages
+---
 
-| Page | Purpose |
+## 功能页面
+
+| 页面 | 功能 |
 |---|---|
-| 概览 | Live stats: rule count, VPS count, realm status |
-| 转发规则 | Table of all rules; toggle enabled/balance/failover |
-| VPS 管理 | Add/edit per-host metadata: expiry date, traffic quota |
-| 权重引擎 | Preview computed scores; trigger manual recomputation |
+| 概览 | 规则数、VPS 数、realm 运行状态 |
+| 转发规则 | 查看/启用/切换负载均衡与故障转移 |
+| VPS 管理 | 填写到期日期、流量配额 |
+| 权重引擎 | 预览权重评分，手动触发重算 |
 
-## Dynamic weight engine
+---
 
-Every 60 seconds the scheduler:
+## 动态权重
 
-1. Groups rules by `LISTEN_PORT` where `BALANCE_MODE != off` and `RULE_ROLE = 1`
-2. For each host in the group, looks up VPS metadata and computes a score:
+每 60 秒自动执行：
 
 ```
-score = W_DAYS × days_score + W_TRAFFIC × traffic_score
-
-days_score    = clamp(remaining_days / MAX_DAYS, 0, 1)
-traffic_score = remaining_gb / total_gb   (1.0 if no quota set)
+score = W_DAYS × (剩余天数 / MAX_DAYS) + W_TRAFFIC × (剩余流量 / 总流量)
 ```
 
-3. Normalises scores to integer weights `[1, 100]` and writes them back to the rule's `WEIGHTS` field
-4. Regenerates `/etc/realm/config.json`
-5. Sends `SIGHUP` to the realm container so it reloads without dropping connections
+- 已到期或流量耗尽的节点评分为 0，流量自动切走
+- 权重写回规则文件后热重载 realm（不中断连接）
 
-Hosts with an **expired date** or **exhausted traffic** receive a score of `0` and are effectively removed from rotation (weight = 1 as the minimum, but all traffic routes to the highest-weight peers).
+可在 `docker-compose.yml` 的 `environment` 中调整：
 
-### Tuning via environment variables
-
-| Variable | Default | Meaning |
+| 变量 | 默认 | 说明 |
 |---|---|---|
-| `WEIGHT_INTERVAL` | `60` | Seconds between automatic recomputes |
-| `WEIGHT_MAX_DAYS` | `30` | Days-until-expiry that maps to `days_score = 1.0` |
-| `WEIGHT_W_DAYS` | `0.5` | Contribution of expiry to overall score |
-| `WEIGHT_W_TRAFFIC` | `0.5` | Contribution of traffic to overall score |
+| `WEIGHT_INTERVAL` | `60` | 重算间隔（秒） |
+| `WEIGHT_MAX_DAYS` | `30` | 满分对应的剩余天数 |
+| `WEIGHT_W_DAYS` | `0.5` | 到期时间权重 |
+| `WEIGHT_W_TRAFFIC` | `0.5` | 流量权重 |
 
-Edit these in `docker-compose.yml` under `panel → environment`.
+---
 
-## VPS metadata format
+## 数据持久化
 
-Stored in `/etc/realm/panel/vps_meta.json`.  
-Each entry is keyed by the host string that appears in the rule's `REMOTE_HOST` field.
+所有数据存在 `realm_data` 命名卷中，删除容器不会丢失规则。  
+彻底清除：`docker volume rm realm_data`
 
-```json
-{
-  "1.2.3.4": {
-    "expire_date": "2027-03-01",
-    "traffic_total_gb": 200,
-    "traffic_used_gb": 47.3,
-    "reset_day": 1,
-    "note": "HK node A"
-  }
-}
-```
-
-`traffic_total_gb: 0` means unlimited (traffic score always 1.0).
-
-## API reference
-
-All endpoints are under `/api/`.
-
-```
-GET  /api/health
-GET  /api/rules
-GET  /api/rules/<id>
-PUT  /api/rules/<id>          { fields: { KEY: value } }
-GET  /api/vps
-GET  /api/vps/<host>
-PUT  /api/vps/<host>          { expire_date, traffic_total_gb, ... }
-DELETE /api/vps/<host>
-GET  /api/weights/preview     dry-run scores, no writes
-POST /api/weights/recompute   run engine immediately
-GET  /api/realm/status
-POST /api/realm/restart
-```
-
-## Updating realm
+## 更新
 
 ```bash
-docker compose pull realm
-docker compose up -d realm
+docker compose pull
+docker compose up -d
 ```
-
-## Data persistence
-
-All data (rules, config, metadata) lives on the `realm_data` named volume.  
-Removing containers does **not** delete rules — only `docker volume rm realm_data` does.
