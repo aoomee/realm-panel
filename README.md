@@ -39,7 +39,7 @@ docker compose up -d
 
 > 如需修改端口，编辑 `docker-compose.yml` 中 `ports` 字段再启动。
 
-也可以不克隆仓库，直接新建一个 `docker-compose.yml` 复制以下内容：
+也可以不克隆仓库，直接新建一个 `docker-compose.yml` 复制以下内容（panel 会从 GitHub 源码自动构建，首次启动稍慢）：
 
 ```yaml
 services:
@@ -53,7 +53,7 @@ services:
     command: ["-c", "/etc/realm/config.json"]
 
   panel:
-    image: ghcr.io/aoomee/realm-panel:latest
+    build: https://github.com/aoomee/realm-panel.git#main:realm-panel
     container_name: realm-panel
     restart: unless-stopped
     ports:
@@ -83,6 +83,15 @@ volumes:
 ```bash
 docker compose up -d
 ```
+
+> **如果 `ghcr.io/zhboner/realm:latest` 拉取失败**（提示 unauthorized），先登录 ghcr.io：
+> ```bash
+> echo $GITHUB_TOKEN | docker login ghcr.io -u 你的GitHub用户名 --password-stdin
+> ```
+> 或者直接用 GitHub 密码登录：
+> ```bash
+> docker login ghcr.io
+> ```
 
 ---
 
