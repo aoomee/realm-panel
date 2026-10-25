@@ -27,6 +27,10 @@ services:
       - WEIGHT_MAX_DAYS=30       # days until expiry that maps to score=1.0
       - WEIGHT_W_DAYS=0.5        # weight factor: expiry component
       - WEIGHT_W_TRAFFIC=0.5     # weight factor: traffic component
+      - MONITOR_INTERVAL=30      # host probe interval (seconds)
+      - MONITOR_TIMEOUT=3        # TCP probe timeout (seconds)
+      - MONITOR_RING=20          # latency history ring size per host
+      - MONITOR_PATH=/etc/realm/panel/monitor.json
     depends_on:
       - realm
 

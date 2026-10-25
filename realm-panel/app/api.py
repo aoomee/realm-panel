@@ -16,6 +16,10 @@ Endpoints
   POST   /api/weights/recompute    run engine now + reload realm
   GET    /api/realm/status
   POST   /api/realm/restart
+  GET    /api/monitor              last monitor state (hosts + rule selftests)
+  POST   /api/monitor/probe        trigger immediate host probe
+  POST   /api/monitor/selftest     run selftest on all enabled rules
+  POST   /api/monitor/selftest/<id> run selftest on one rule
 """
 import logging
 from datetime import date, datetime
@@ -26,6 +30,7 @@ from . import config_io
 from .realm_ctrl import restart_realm, reload_realm
 from .weight_engine import recalculate_weights, _score_host, _remaining_days, _traffic_fraction
 from .scheduler import trigger_now
+from . import monitor as mon
 
 log = logging.getLogger(__name__)
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -191,3 +196,30 @@ def realm_status():
 def realm_restart():
     restart_realm()
     return jsonify({"ok": True})
+
+
+# --------------------------- monitoring ---------------------------
+@bp.get("/monitor")
+def monitor_state():
+    """Return last persisted monitor state (hosts + rule selftests)."""
+    return jsonify(mon.get_state())
+
+
+@bp.post("/monitor/probe")
+def monitor_probe():
+    """Trigger an immediate probe of all backend hosts."""
+    return jsonify({"ok": True, "hosts": mon.probe_all_hosts()})
+
+
+@bp.post("/monitor/selftest")
+def monitor_selftest_all():
+    """Run self-test on every enabled rule."""
+    return jsonify({"ok": True, "rules": mon.selftest_all()})
+
+
+@bp.post("/monitor/selftest/<int:rule_id>")
+def monitor_selftest_one(rule_id):
+    result = mon.selftest_rule(str(rule_id))
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)

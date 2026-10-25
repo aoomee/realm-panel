@@ -170,6 +170,7 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
     <div class="nav-item" data-page="rules">转发规则</div>
     <div class="nav-item" data-page="vps">VPS 资产</div>
     <div class="nav-item" data-page="weights">权重引擎</div>
+    <div class="nav-item" data-page="monitor">链路监控</div>
     <div class="realm-status">
       <div class="dot" id="status-dot"></div>
       <span id="status-text" style="font-size:14px;color:var(--text)">检查中...</span>
@@ -225,6 +226,29 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
           </table>
         </div>
       </div>
+    </section>
+
+    <!-- MONITOR -->
+    <section class="page" id="page-monitor">
+      <h2>链路监控</h2>
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="runSelfTestAll()">全部自检</button>
+        <button class="btn btn-ghost"   onclick="loadMonitor()">刷新</button>
+        <button class="btn btn-ghost"   onclick="triggerProbe()">立即探测</button>
+      </div>
+
+      <h3 style="margin-bottom:var(--sp3)">节点可达性</h3>
+      <div class="card" style="margin-bottom:var(--sp6)">
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>节点</th><th>最近状态</th><th>延迟(最新)</th><th>平均延迟</th><th>在线率</th><th>最后检测</th></tr></thead>
+            <tbody id="monitor-hosts-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom:var(--sp3)">规则自检</h3>
+      <div id="monitor-rules-container"></div>
     </section>
 
     <!-- WEIGHTS -->
@@ -402,6 +426,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
     if (el.dataset.page === 'rules')   loadRules()
     if (el.dataset.page === 'vps')     loadVps()
     if (el.dataset.page === 'weights') loadWeightPreview()
+    if (el.dataset.page === 'monitor') loadMonitor()
   })
 })
 
@@ -711,6 +736,112 @@ async function triggerRecompute() {
   await fetch(API + '/weights/recompute', { method: 'POST' })
   toast('计算完成，配置已重载')
   loadWeightPreview(); loadOverview()
+}
+
+// ---------- Monitor ----------
+async function loadMonitor() {
+  const data = await fetch(API + '/monitor').then(r => r.json())
+  renderMonitorHosts(data.hosts || {})
+  renderMonitorRules(data.rules || {})
+}
+
+async function triggerProbe() {
+  toast('探测中...')
+  const data = await fetch(API + '/monitor/probe', { method: 'POST' }).then(r => r.json())
+  renderMonitorHosts(data.hosts || {})
+  toast('探测完成')
+}
+
+async function runSelfTestAll() {
+  toast('自检中，请稍候...')
+  const data = await fetch(API + '/monitor/selftest', { method: 'POST' }).then(r => r.json())
+  renderMonitorRules(data.rules || {})
+  toast('全部规则自检完成')
+}
+
+async function runSelfTestOne(ruleId) {
+  toast('自检规则 #' + ruleId + '...')
+  const data = await fetch(API + '/monitor/selftest/' + ruleId, { method: 'POST' }).then(r => r.json())
+  // refresh the full rule container to update the one card
+  const container = document.getElementById('monitor-rules-container')
+  const existing  = document.getElementById('monitor-rule-' + ruleId)
+  if (existing) existing.outerHTML = ruleCard(data)
+  else container.innerHTML += ruleCard(data)
+  toast('规则 #' + ruleId + ' 自检完成')
+}
+
+function renderMonitorHosts(hosts) {
+  const keys = Object.keys(hosts)
+  const tbody = document.getElementById('monitor-hosts-tbody')
+  if (!keys.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;font-weight:700;padding:32px">暂无探测数据，等待首次调度或手动触发</td></tr>'
+    return
+  }
+  tbody.innerHTML = keys.map(key => {
+    const h = hosts[key]
+    const ok = h.last_ok
+    const statusBadge = ok
+      ? '<span class="badge badge-dark">在线</span>'
+      : '<span class="badge badge-light">离线</span>'
+    const upPct = h.uptime_pct ?? '—'
+    const barW  = typeof upPct === 'number' ? upPct : 0
+    const barCls = barW < 50 ? 'progress-fill warning' : 'progress-fill'
+    const ts = h.last_checked ? h.last_checked.replace('T', ' ').replace('Z', '') : '—'
+    return `<tr>
+      <td><code>${key}</code></td>
+      <td>${statusBadge}</td>
+      <td style="font-weight:900">${h.last_ms != null ? h.last_ms + ' ms' : '—'}</td>
+      <td style="font-weight:700">${h.avg_ms  != null ? h.avg_ms  + ' ms' : '—'}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="progress" style="width:100px">
+            <div class="${barCls}" style="width:${barW}%"></div>
+          </div>
+          <span style="font-weight:900;min-width:40px">${typeof upPct === 'number' ? upPct + '%' : '—'}</span>
+        </div>
+      </td>
+      <td style="color:var(--muted);font-weight:700;font-size:13px">${ts}</td>
+    </tr>`
+  }).join('')
+}
+
+function ruleCard(r) {
+  const overall = r.overall
+  const badge   = overall
+    ? '<span class="badge badge-dark">正常</span>'
+    : '<span class="badge badge-outline">异常</span>'
+  const steps = (r.steps || []).map(s => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--raised)">
+      <div style="width:22px;height:22px;border-radius:50%;background:${s.ok ? 'var(--black)' : 'var(--border)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">
+        <span style="color:${s.ok ? '#fff' : 'var(--muted)'};font-size:13px;font-weight:900">${s.ok ? '✓' : '✗'}</span>
+      </div>
+      <div>
+        <div style="font-weight:800;font-size:14px">${s.name}</div>
+        <div style="color:var(--muted);font-size:13px;font-weight:700;margin-top:2px">${s.detail || ''}</div>
+      </div>
+    </div>`).join('')
+  const ts = r.tested_at ? r.tested_at.replace('T', ' ').replace('Z', '') : ''
+  return `<div class="card" id="monitor-rule-${r.rule_id}" style="margin-bottom:var(--sp4)">
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:var(--sp3)">
+      ${badge}
+      <span style="font-weight:900;font-size:16px">#${r.rule_id} ${r.rule_name || ''}</span>
+      <span class="tag">:${r.listen_port}</span>
+      <div class="spacer"></div>
+      <span style="color:var(--muted);font-size:12px;font-weight:700">${ts}</span>
+      <button class="btn btn-ghost btn-sm" onclick="runSelfTestOne(${r.rule_id})">重新自检</button>
+    </div>
+    ${steps}
+  </div>`
+}
+
+function renderMonitorRules(rules) {
+  const container = document.getElementById('monitor-rules-container')
+  const keys = Object.keys(rules)
+  if (!keys.length) {
+    container.innerHTML = '<div class="card" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">暂无自检数据，点击「全部自检」运行诊断。</div>'
+    return
+  }
+  container.innerHTML = keys.map(k => ruleCard(rules[k])).join('')
 }
 </script>
 </body>
