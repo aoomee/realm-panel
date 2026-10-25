@@ -39,6 +39,51 @@ docker compose up -d
 
 > 如需修改端口，编辑 `docker-compose.yml` 中 `ports` 字段再启动。
 
+也可以不克隆仓库，直接新建一个 `docker-compose.yml` 复制以下内容：
+
+```yaml
+services:
+  realm:
+    image: ghcr.io/zhboner/realm:latest
+    container_name: realm
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - realm_data:/etc/realm
+    command: ["-c", "/etc/realm/config.json"]
+
+  panel:
+    image: ghcr.io/aoomee/realm-panel:latest
+    container_name: realm-panel
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - realm_data:/etc/realm
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - RULES_DIR=/etc/realm/rules
+      - META_PATH=/etc/realm/panel/vps_meta.json
+      - CONFIG_JSON=/etc/realm/config.json
+      - REALM_BACKEND=docker
+      - REALM_CONTAINER=realm
+      - WEIGHT_INTERVAL=60
+      - WEIGHT_MAX_DAYS=30
+      - WEIGHT_W_DAYS=0.5
+      - WEIGHT_W_TRAFFIC=0.5
+    depends_on:
+      - realm
+
+volumes:
+  realm_data:
+```
+
+然后执行：
+
+```bash
+docker compose up -d
+```
+
 ---
 
 ## 初始化规则
