@@ -29,6 +29,14 @@ Endpoints
   POST   /api/nodes/push-all       push each enabled node its own rules
   GET    /api/nodes/<id>/config    preview a node's config ("local" = machine A)
   GET    /api/nodes/<id>/health    probe one node's /health endpoint
+  GET    /api/nodes/<id>/install-cmd  one-line deploy command for that node
+  POST   /api/nodes/import         bulk add: "名称 角色 IP [端口]" per line
+  GET    /api/lines                list lines (线路)
+  POST   /api/lines                one-click deploy relay → exit line
+  DELETE /api/lines/<id>           remove line and its rules
+  POST   /api/lines/<id>/redeploy  re-push the line's nodes
+  POST   /api/lines/<id>/test      hop-by-hop TCP test
+  POST   /api/links/parse          parse a share link (host/port)
 """
 import logging
 from datetime import date, datetime
@@ -36,12 +44,13 @@ from datetime import date, datetime
 from flask import Blueprint, jsonify, request
 
 from . import config_io
-from .realm_ctrl import restart_realm, reload_realm
+from .realm_ctrl import restart_realm
 from .weight_engine import recalculate_weights, _score_host, _remaining_days, _traffic_fraction
 from .scheduler import trigger_now
 from . import monitor as mon
 from . import node_io
 from . import node_client
+from . import lines_io
 
 log = logging.getLogger(__name__)
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -86,6 +95,7 @@ def update_rule(rule_id):
     ok = config_io.update_rule_fields(str(rule_id), fields)
     if not ok:
         return jsonify({"error": "rule not found"}), 404
+    config_io.regenerate_config()   # e.g. enable/disable must reach realm
     return jsonify({"ok": True})
 
 
@@ -97,8 +107,8 @@ def create_rule():
     if not body.get("LISTEN_PORT"):
         return jsonify({"error": "LISTEN_PORT is required"}), 400
     rule = config_io.create_rule(body)
-    config_io.regenerate_config()
-    reload_realm()
+    res = config_io.regenerate_config()
+    rule["_push"] = res.get("pushed", {})
     return jsonify(rule), 201
 
 
@@ -108,7 +118,6 @@ def delete_rule(rule_id):
     if not ok:
         return jsonify({"error": "rule not found"}), 404
     config_io.regenerate_config()
-    reload_realm()
     return jsonify({"ok": True})
 
 
@@ -151,7 +160,8 @@ def weights_preview():
         if r.get("RULE_ROLE", "1") != "1":
             continue
         port = r.get("LISTEN_PORT", "")
-        groups.setdefault(port, []).append(r)
+        key = f'{r.get("NODE_ID", "") or "local"}:{port}'
+        groups.setdefault(key, []).append(r)
 
     preview = {}
     for port, group in groups.items():
@@ -187,7 +197,6 @@ def weights_preview():
 def recompute():
     groups = recalculate_weights()
     config_io.regenerate_config()
-    reload_realm()
     return jsonify({"ok": True, "groups": list(groups.keys())})
 
 
@@ -248,11 +257,9 @@ def create_node():
     body = request.get_json(force=True)
     if not isinstance(body, dict):
         return jsonify({"error": "expected JSON object"}), 400
-    if not body.get("url"):
-        return jsonify({"error": "url is required"}), 400
-    if not body.get("token"):
-        return jsonify({"error": "token is required"}), 400
-    node = node_io.create_node(body)
+    if not body.get("url") and not body.get("host"):
+        return jsonify({"error": "请填写公网 IP/域名"}), 400
+    node = node_io.create_node(body)   # token auto-generated when omitted
     return jsonify(node), 201
 
 
@@ -277,9 +284,17 @@ def update_node(node_id):
 
 @bp.delete("/nodes/<node_id>")
 def delete_node(node_id):
+    used = [l["name"] for l in lines_io.list_lines().values()
+            if l.get("relay_node") == node_id or node_id in l.get("exit_nodes", [])]
+    if used:
+        return jsonify({"error": "该节点仍被线路使用：" + "、".join(used) + "，请先删除这些线路"}), 409
     ok = node_io.delete_node(node_id)
     if not ok:
         return jsonify({"error": "not found"}), 404
+    # its rules can no longer be delivered anywhere — drop them
+    for r in config_io.list_rules():
+        if r.get("NODE_ID") == node_id:
+            config_io.delete_rule(r["RULE_ID"])
     return jsonify({"ok": True})
 
 
@@ -288,7 +303,7 @@ def push_one_node(node_id):
     """Push this node its own config (only rules assigned to it)."""
     if node_io.get_node(node_id) is None:
         return jsonify({"error": "not found"}), 404
-    result = node_client.push_node(node_id)
+    result = node_client.push_node(node_id, force=True)
     code = 200 if result.get("ok") else 502
     return jsonify(result), code
 
@@ -296,7 +311,7 @@ def push_one_node(node_id):
 @bp.post("/nodes/push-all")
 def push_all_nodes():
     """Push every enabled node its own filtered config."""
-    results = node_client.push_config_to_all()
+    results = node_client.push_config_to_all(force=True)
     all_ok = all(v.get("ok") or v.get("skipped") for v in results.values())
     return jsonify({"ok": all_ok, "results": results})
 
@@ -316,3 +331,137 @@ def node_health(node_id):
     result = node_client.health_node(node)
     code = 200 if result.get("ok") else 502
     return jsonify(result), code
+
+
+# --------------------------- install command / bulk import ---------------------------
+
+def _install_cmd(node: dict, panel: str, gh_proxy: str = "") -> str:
+    import shlex
+    panel = panel.rstrip("/")
+    env = [f"PANEL={shlex.quote(panel)}", f"TOKEN={shlex.quote(node['token'])}",
+           f"PORT={shlex.quote(str(node.get('agent_port') or 5001))}"]
+    if gh_proxy:
+        env.append(f"GH_PROXY={shlex.quote(gh_proxy)}")
+    return f"curl -fsSL {shlex.quote(panel + '/agent/install.sh')} | {' '.join(env)} bash"
+
+
+def _panel_base() -> str:
+    """Panel URL as seen by remote nodes: ?panel= override, else this request's origin."""
+    p = (request.args.get("panel") or "").strip()
+    return p or request.host_url.rstrip("/")
+
+
+@bp.get("/nodes/<node_id>/install-cmd")
+def node_install_cmd(node_id):
+    node = node_io.get_node(node_id)
+    if node is None:
+        return jsonify({"error": "not found"}), 404
+    gh = (request.args.get("gh_proxy") or "").strip()
+    return jsonify({"cmd": _install_cmd(node, _panel_base(), gh),
+                    "uninstall": "systemctl disable --now realm-agent realm; "
+                                 "rm -f /etc/systemd/system/realm-agent.service /usr/local/bin/realm-agent /etc/realm/agent.env; "
+                                 "systemctl daemon-reload"})
+
+
+_ROLE_ALIASES = {"relay": "relay", "中转": "relay", "入口": "relay",
+                 "exit": "exit", "落地": "exit", "出口": "exit"}
+
+
+@bp.post("/nodes/import")
+def import_nodes():
+    """
+    Bulk-add nodes. body: {"text": "..."} one node per line:
+        名称 角色 IP/域名 [Agent端口]
+    separated by spaces, tabs or commas; 角色 = 中转/落地 (relay/exit).
+    """
+    import re
+    text = (request.get_json(force=True) or {}).get("text", "")
+    created, errors = [], []
+    for i, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p for p in re.split(r"[,\s，]+", line) if p]
+        if len(parts) < 3:
+            errors.append(f"第{i}行格式不对：{raw}")
+            continue
+        role = _ROLE_ALIASES.get(parts[1].lower())
+        if not role:
+            errors.append(f"第{i}行角色应为 中转/落地：{parts[1]}")
+            continue
+        port = parts[3] if len(parts) > 3 else "5001"
+        if not port.isdigit():
+            errors.append(f"第{i}行端口无效：{port}")
+            continue
+        created.append(node_io.create_node({"name": parts[0], "role": role,
+                                            "host": parts[2], "agent_port": port}))
+    return jsonify({"created": created, "errors": errors})
+
+
+# --------------------------- lines (线路) ---------------------------
+
+@bp.get("/lines")
+def get_lines():
+    return jsonify(lines_io.list_lines())
+
+
+def _apply_line_nodes(node_ids: list[str]) -> dict:
+    """Regenerate local config and push the affected nodes; return per-node results."""
+    config_io.regenerate_config(push_to_nodes=False)
+    pushed = node_client.push_nodes(node_ids, force=True)
+    out = {}
+    nodes = node_io.list_nodes()
+    for nid in node_ids:
+        label = "本机(A)" if not nid else (nodes.get(nid, {}).get("name") or nid)
+        if not nid:
+            out[label] = {"ok": True, "detail": "本机配置已更新"}
+        else:
+            r = pushed.get(nid, {})
+            out[label] = {"ok": bool(r.get("ok")), "detail": node_client._summary(r)}
+    return out
+
+
+@bp.post("/lines")
+def create_line():
+    body = request.get_json(force=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+    try:
+        line = lines_io.deploy_line(body, fallback_entry_host=request.host.rsplit(":", 1)[0].strip("[]"))
+    except lines_io.LineError as e:
+        return jsonify({"error": str(e)}), 400
+    line["_push"] = _apply_line_nodes(lines_io.affected_nodes(line))
+    return jsonify(line), 201
+
+
+@bp.delete("/lines/<line_id>")
+def remove_line(line_id):
+    line = lines_io.delete_line(line_id)
+    if line is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True, "_push": _apply_line_nodes(lines_io.affected_nodes(line))})
+
+
+@bp.post("/lines/<line_id>/redeploy")
+def redeploy_line(line_id):
+    line = lines_io.get_line(line_id)
+    if line is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True, "_push": _apply_line_nodes(lines_io.affected_nodes(line))})
+
+
+@bp.post("/lines/<line_id>/test")
+def test_line(line_id):
+    result = lines_io.test_line(line_id)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@bp.post("/links/parse")
+def parse_link():
+    from . import share_link
+    info = share_link.parse((request.get_json(force=True) or {}).get("link", ""))
+    if not info:
+        return jsonify({"error": "无法识别的链接"}), 400
+    return jsonify(info)

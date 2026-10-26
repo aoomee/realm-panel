@@ -111,7 +111,8 @@ def recalculate_weights():
         if rule.get("RULE_ROLE", "1") != "1":
             continue
         port = rule.get("LISTEN_PORT", "")
-        port_groups.setdefault(port, []).append(rule)
+        key = f'{rule.get("NODE_ID", "") or "local"}:{port}'
+        port_groups.setdefault(key, []).append(rule)
 
     for port, group in port_groups.items():
         hosts: list[str] = []

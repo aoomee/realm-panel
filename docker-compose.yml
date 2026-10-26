@@ -9,7 +9,9 @@ services:
     command: ["-c", "/etc/realm/config.json"]
 
   panel:
-    build: ./realm-panel
+    build:
+      context: .                       # repo root: bundles realm-agent/ for remote installs
+      dockerfile: realm-panel/Dockerfile
     container_name: realm-panel
     restart: unless-stopped
     ports:
@@ -33,6 +35,11 @@ services:
       - MONITOR_PATH=/etc/realm/panel/monitor.json
       - NODES_PATH=/etc/realm/panel/nodes.json   # remote agent registry
       - NODE_PUSH_TIMEOUT=8      # per-node HTTP push timeout (seconds)
+      - LINES_PATH=/etc/realm/panel/lines.json   # 线路 registry
+      - LINE_PORT_MIN=20000      # auto-assigned line port range
+      - LINE_PORT_MAX=59999
+      - PANEL_PASSWORD=          # 强烈建议设置！面板登录密码（用户名 admin），留空 = 不鉴权
+      - PANEL_PUBLIC_HOST=       # A 机公网 IP/域名：本机做中转时的入口地址（可留空）
     depends_on:
       - realm
 

@@ -13,7 +13,6 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .weight_engine import recalculate_weights
-from .realm_ctrl import reload_realm
 from .config_io import regenerate_config
 
 log = logging.getLogger(__name__)
@@ -25,8 +24,8 @@ _scheduler: BackgroundScheduler | None = None
 def _weight_job():
     try:
         recalculate_weights()
+        # only restarts realm / pushes nodes whose config actually changed
         regenerate_config()
-        reload_realm()
     except Exception as e:
         log.error("weight job failed: %s", e)
 

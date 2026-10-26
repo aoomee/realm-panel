@@ -55,7 +55,9 @@ services:
     command: ["-c", "/etc/realm/config.json"]
 
   panel:
-    build: ./realm-panel
+    build:
+      context: .
+      dockerfile: realm-panel/Dockerfile
     container_name: realm-panel
     restart: unless-stopped
     ports:
@@ -73,6 +75,8 @@ services:
       - WEIGHT_MAX_DAYS=30
       - WEIGHT_W_DAYS=0.5
       - WEIGHT_W_TRAFFIC=0.5
+      - PANEL_PASSWORD=          # 强烈建议设置！面板登录密码（用户名 admin）
+      - PANEL_PUBLIC_HOST=       # A 机公网 IP/域名：本机做中转时的入口地址
     depends_on:
       - realm
 
@@ -97,11 +101,12 @@ docker compose up -d
 | 页面 | 功能 |
 |---|---|
 | 概览 | 规则数、VPS 数、realm 运行状态 |
-| 转发规则 | 查看/启用/切换负载均衡与故障转移 |
+| 节点管理 | 添加中转/落地机、一键生成部署命令、批量导入、健康状态 |
+| 线路部署 | 选中转+落地，粘贴节点链接，一键下发整条线路并返回新链接 |
+| 转发规则 | 查看/启用/切换负载均衡与故障转移（可指定所属节点） |
 | VPS 管理 | 填写到期日期、流量配额 |
 | 权重引擎 | 预览权重评分，手动触发重算 |
 | 链路监控 | 节点可达性探测、延迟历史、规则自检 |
-| 节点管理 | 注册远端中转/落地机 Agent，一键推送配置，查看健康状态 |
 
 ---
 
@@ -137,7 +142,7 @@ score = W_DAYS × (剩余天数 / MAX_DAYS) + W_TRAFFIC × (剩余流量 / 总�
 ```
 
 - 已到期或流量耗尽的节点评分为 0，流量自动切走
-- 权重写回规则文件后热重载 realm（不中断连接）
+- 权重变化时重写规则文件并下发；realm 无热重载，仅当配置确实变化时才重启对应节点的 realm
 
 可在 `docker-compose.yml` 的 `environment` 中调整：
 
@@ -150,57 +155,72 @@ score = W_DAYS × (剩余天数 / MAX_DAYS) + W_TRAFFIC × (剩余流量 / 总�
 
 ---
 
-## 节点管理 — 远端 Agent 部署
+## 节点管理 & 线路部署（管理 12 台中转/落地机）
 
-面板运行在 A 机（管理机），中转机和落地机各运行一个轻量 HTTP Agent，面板推送 config.json 后 Agent 热重载 realm。
+面板跑在 A 机，其余每台机器通过**面板生成的一键命令**安装 realm + 轻量 Agent。之后在面板上点几下，就能在中转机与落地机之间部署一条转发线路，并得到改好入口地址的客户端链接。
 
-### 一键安装（每台远端机执行一次）
+### 第一步：在面板添加节点
 
-```bash
-# TOKEN=generate 时自动生成随机 token
-TOKEN=generate PORT=5001 bash <(curl -fsSL \
-  https://raw.githubusercontent.com/aoomee/realm-panel/main/realm-agent/install.sh)
-```
+「节点管理」→「添加节点」或「批量导入」，只需填**名称 + 公网 IP**（批量导入格式：`名称 角色 IP [Agent端口]`，角色填 `中转` 或 `落地`）。Token 由面板自动生成。
 
-脚本完成后会打印：
-```
-Agent URL : http://<本机IP>:5001
-Token     : xxxxxxxxxxxxxxxx
-```
+### 第二步：复制部署命令到各机器
 
-将这两个值填入面板「节点管理」页面的「添加节点」弹窗即可。
-
-### 手动安装
+点节点行的「部署命令」（或「全部部署命令」一次全量复制）。SSH 登录对应机器，**root** 下粘贴执行：
 
 ```bash
-# 1. 复制 agent.py
-cp realm-agent/agent.py /usr/local/bin/realm-agent
-chmod +x /usr/local/bin/realm-agent
-
-# 2. 写入 token（权限 600，不对外暴露）
-mkdir -p /etc/realm
-echo 'AGENT_TOKEN=你的token' > /etc/realm/agent.env
-chmod 600 /etc/realm/agent.env
-
-# 3. 安装并启动 systemd 服务
-cp realm-agent/realm-agent.service /etc/systemd/system/
-# 编辑 service 里的 EnvironmentFile 行或直接写 Environment= 行
-systemctl daemon-reload
-systemctl enable --now realm-agent
+curl -fsSL http://<A机IP>:5000/agent/install.sh | PANEL=http://<A机IP>:5000 TOKEN=<自动生成的token> PORT=5001 bash
 ```
 
-### 防火墙建议
+脚本会自动：装依赖 → 下载 realm（优先从面板下载，失败回退 GitHub，可配 `GH_PROXY` 加速）→ 写入 realm 服务 → 安装并启动 Agent。**重复执行即升级。**
 
-只允许 A 机 IP 访问 Agent 端口，拒绝其他来源：
+回到面板「节点管理」点「刷新列表」，状态变「在线」即可。
+
+### 第三步：一键建线路
+
+「线路部署」→「新建线路」：选中转机 + 落地机（多选 = 负载均衡），粘贴落地机上的节点链接（vless/vmess/trojan/ss/hy2/tuic…），点「一键部署」。面板自动：
+
+1. 分配中转监听端口（和链式落地端口）
+2. 生成两端 realm 规则并下发（realm 无热重载，会瞬时重启该节点的 realm 来应用新配置）
+3. 返回改好入口地址的**新节点链接**，直接导入客户端
+
+- **直连模式**：中转 → 落地服务端口（落地无需 realm 规则）
+- **链式模式**：中转 → 落地 realm → 落地本机服务（落地服务端口不必公开，默认 127.0.0.1）
+
+多落地时权重随「VPS 资产」里按落地 IP 填写的到期时间/剩余流量自动调整。每条线路都能「测试」逐跳连通性、「重新下发」或「删除」。
+
+### 防火墙
+
+节点需放行：Agent 端口（建议仅允许 A 机 IP）+ 线路端口（默认 20000-59999 的 TCP/UDP）。云厂商安全组同理：
 
 ```bash
-ufw allow from <A机IP> to any port 5001
-ufw deny 5001
+ufw allow from <A机IP> to any port 5001 proto tcp
+ufw allow 20000:59999/tcp && ufw allow 20000:59999/udp
 ```
 
-### 添加规则时指定节点
+### 面板鉴权（强烈建议）
 
-在「转发规则」→「添加规则」弹窗底部的「所属节点」下拉框中选择对应节点（默认「本机 (A)」）。每次保存规则或触发权重重算后，面板自动并发推送每台节点各自对应的 config.json。
+公网部署务必在 `docker-compose.yml` 里设置 `PANEL_PASSWORD`（用户名 `admin`）。`/agent/*` 安装文件保持公开（节点部署命令需要它），其余页面与 API 需登录。
+
+### 手动安装（不想用一键命令时）
+
+```bash
+# 1. 装 realm 二进制到 /usr/local/bin/realm，写 realm.service（或用 Docker）
+# 2. 复制 agent.py
+cp realm-agent/agent.py /usr/local/bin/realm-agent && chmod +x /usr/local/bin/realm-agent
+# 3. 写 token
+mkdir -p /etc/realm && echo 'AGENT_TOKEN=你的token' > /etc/realm/agent.env && chmod 600 /etc/realm/agent.env
+# 4. 装 systemd 服务
+cp realm-agent/realm-agent.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now realm-agent
+```
+
+### 新增环境变量
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `PANEL_PASSWORD` | 空 | 面板登录密码（用户名 admin），留空 = 不鉴权 |
+| `PANEL_PUBLIC_HOST` | 空 | A 机公网 IP/域名（本机做中转时的入口地址） |
+| `LINES_PATH` | `/etc/realm/panel/lines.json` | 线路存储 |
+| `LINE_PORT_MIN` / `LINE_PORT_MAX` | `20000` / `59999` | 线路自动分配端口范围 |
 
 ---
 
@@ -212,6 +232,6 @@ ufw deny 5001
 ## 更新
 
 ```bash
-docker compose pull
-docker compose up -d
+git pull
+docker compose up -d --build
 ```

@@ -93,24 +93,42 @@ def health_node(node: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def push_node(node_id: str) -> dict:
-    """Build the node's own config (only rules with NODE_ID == node_id) and push it."""
+def push_node(node_id: str, force: bool = True) -> dict:
+    """
+    Build the node's own config (only rules with NODE_ID == node_id) and push it.
+    With force=False the push is skipped when the node already acknowledged
+    an identical config (pushing restarts realm, which drops connections).
+    """
     from . import config_io
     node = node_io.get_node(node_id)
     if node is None:
         return {"ok": False, "error": "node not found"}
     cfg = config_io.build_config(node_id)
+    h = config_io.config_hash(cfg)
+    if not force and node.get("config_hash") == h and node.get("last_push_ok"):
+        return {"ok": True, "skipped": True, "reason": "unchanged"}
     result = push_config_to_node(node, cfg)
     result.setdefault("endpoints", len(cfg["endpoints"]))
-    node_io.set_push_result(node_id, bool(result.get("ok")), str(result)[:300])
+    ok = bool(result.get("ok"))
+    node_io.set_push_result(node_id, ok, _summary(result), h if ok else None)
     return result
 
 
-def push_config_to_all() -> dict[str, dict]:
+def _summary(result: dict) -> str:
+    if result.get("ok"):
+        return f"OK · {result.get('endpoints', 0)} 条转发"
+    detail = result.get("error") or ""
+    rl = result.get("reload") or {}
+    if rl and not rl.get("ok"):
+        detail = rl.get("detail") or detail
+    return (detail or str(result))[:300]
+
+
+def push_config_to_all(force: bool = False) -> dict[str, dict]:
     """
-    Push each enabled node its own filtered config. Pushes run in parallel
-    so 12 nodes × 8s timeout cannot stall the caller for 96s.
-    Returns {node_id: result}.
+    Push each enabled node its own filtered config (only changed ones unless
+    force). Pushes run in parallel so 12 nodes × 8 s timeout can't stall the
+    caller for 96 s. Returns {node_id: result}.
     """
     from concurrent.futures import ThreadPoolExecutor
     nodes = node_io.list_nodes()
@@ -123,18 +141,33 @@ def push_config_to_all() -> dict[str, dict]:
             targets.append(node_id)
     if targets:
         with ThreadPoolExecutor(max_workers=min(16, len(targets))) as ex:
-            for node_id, res in zip(targets, ex.map(push_node, targets)):
+            for node_id, res in zip(targets, ex.map(lambda n: push_node(n, force), targets)):
                 out[node_id] = res
     return out
 
 
-def health_all() -> dict[str, dict]:
-    """Probe every enabled node's /health endpoint in sequence."""
-    nodes = node_io.list_nodes()
-    out: dict[str, dict] = {}
-    for node_id, node in nodes.items():
-        if node.get("enabled", "true") != "true":
-            out[node_id] = {"ok": False, "skipped": True}
-            continue
-        out[node_id] = health_node(node)
-    return out
+def push_nodes(node_ids: list[str], force: bool = False) -> dict[str, dict]:
+    """Push a specific set of nodes in parallel ("" = local, ignored here)."""
+    from concurrent.futures import ThreadPoolExecutor
+    ids = [n for n in node_ids if n]
+    if not ids:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(16, len(ids))) as ex:
+        return dict(zip(ids, ex.map(lambda n: push_node(n, force), ids)))
+
+
+def tcping_via(node: dict, host: str, port) -> dict:
+    """Ask a node's agent to TCP-connect host:port and report latency."""
+    url = (node or {}).get("url", "").rstrip("/")
+    token = (node or {}).get("token", "")
+    if not url or not token:
+        return {"ok": False, "error": "节点未配置 Agent"}
+    try:
+        return _post_json(f"{url}/tcping", token, "POST", {"host": host, "port": int(port)})
+    except urllib.error.HTTPError as e:
+        hint = "（Agent 版本过旧，请重新执行部署命令升级）" if e.code == 404 else ""
+        return {"ok": False, "error": f"HTTP {e.code}{hint}"}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"Agent 不可达: {e.reason}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

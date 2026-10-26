@@ -132,6 +132,17 @@ label { display: block; font-size: 14px; font-weight: 800; color: var(--muted); 
 input, select { width: 100%; background: var(--raised); border: 2px solid transparent; border-radius: var(--radius-sm); padding: 14px 16px; color: var(--text); font-size: 15px; font-weight: 700; font-family: inherit; outline: none; transition: all 0.4s var(--spring); }
 input:focus, select:focus { border-color: var(--black); background: var(--surface); transform: scale(1.01); box-shadow: 0 8px 20px rgba(0,0,0,0.05); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp3); }
+textarea { width: 100%; background: var(--raised); border: 2px solid transparent; border-radius: var(--radius-sm); padding: 14px 16px; color: var(--text); font-size: 13px; font-weight: 700; font-family: ui-monospace, monospace; outline: none; resize: vertical; transition: all 0.4s var(--spring); }
+textarea:focus { border-color: var(--black); background: var(--surface); }
+.cmd-box { position: relative; background: var(--black); color: #fff; border-radius: var(--radius-sm); padding: 16px 18px; font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.6; word-break: break-all; white-space: pre-wrap; margin-bottom: var(--sp3); }
+.cmd-label { font-size: 13px; font-weight: 900; margin: var(--sp3) 0 6px; display: flex; align-items: center; gap: 10px; }
+.hint { color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.7; }
+.info-box { color: var(--muted); font-size: 14px; font-weight: 700; margin-bottom: var(--sp4); background: var(--raised); padding: 16px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); line-height: 1.8; }
+.check-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; background: var(--raised); border-radius: var(--radius-sm); padding: 12px; }
+.check-item { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 14px; color: var(--text); margin: 0; cursor: pointer; }
+.check-item input { width: auto; transform: scale(1.2); }
+.modal.wide { width: min(720px, 94vw); }
+.step-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--raised); font-weight: 700; font-size: 14px; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: none; align-items: center; justify-content: center; z-index: 100; opacity: 0; transition: opacity 0.3s ease; }
 .modal-overlay.open { display: flex; opacity: 1; }
 .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; width: min(560px, 92vw); box-shadow: var(--shadow); transform: scale(0.8) translateY(40px); transition: transform 0.5s var(--spring); max-height: 90vh; overflow-y: auto; }
@@ -167,11 +178,12 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
   <aside class="sidebar">
     <div class="logo">Realm</div>
     <div class="nav-item active" data-page="overview">概览</div>
+    <div class="nav-item" data-page="nodes">节点管理</div>
+    <div class="nav-item" data-page="lines">线路部署</div>
     <div class="nav-item" data-page="rules">转发规则</div>
     <div class="nav-item" data-page="vps">VPS 资产</div>
     <div class="nav-item" data-page="weights">权重引擎</div>
     <div class="nav-item" data-page="monitor">链路监控</div>
-    <div class="nav-item" data-page="nodes">节点管理</div>
     <div class="realm-status">
       <div class="dot" id="status-dot"></div>
       <span id="status-text" style="font-size:14px;color:var(--text)">检查中...</span>
@@ -270,17 +282,54 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
       <h2>节点管理</h2>
       <div class="toolbar">
         <button class="btn btn-primary" onclick="openAddNode()">＋ 添加节点</button>
+        <button class="btn btn-ghost"   onclick="openImport()">批量导入</button>
+        <button class="btn btn-ghost"   onclick="showAllCmds()">全部部署命令</button>
         <button class="btn btn-ghost"   onclick="loadNodes()">刷新列表</button>
-        <button class="btn btn-ghost"   onclick="pushAllNodes()">推送配置到全部节点</button>
+        <div class="spacer"></div>
+        <button class="btn btn-ghost"   onclick="pushAllNodes()">强制推送全部</button>
       </div>
-      <p style="color:var(--muted);font-size:14px;font-weight:700;margin-bottom:var(--sp4);background:var(--raised);padding:16px 20px;border-radius:var(--radius-sm);border:1px solid var(--border)">
-        在每台中转机/落地机上运行 realm-agent，填入 URL 和 Token 即可从面板统一推送配置并触发热重载。
-      </p>
+      <div class="info-box">
+        ① 添加节点（填名称 + 公网 IP）→ ② 点「部署命令」复制，到该机器 root 下粘贴执行 → ③ 刷新列表看到「在线」→ ④ 去「线路部署」点几下建线路。<br>
+        部署命令会自动安装 realm + Agent，重复执行即升级。
+      </div>
+      <div class="card" style="margin-bottom:var(--sp4)">
+        <div class="form-grid">
+          <div class="form-row" style="margin-bottom:0">
+            <label>面板地址（节点用它下载安装脚本，需节点能访问）</label>
+            <input id="set-panel-url" type="text" onchange="saveSettings()">
+          </div>
+          <div class="form-row" style="margin-bottom:0">
+            <label>GitHub 加速前缀（可选，面板下载失败时才用）</label>
+            <input id="set-gh-proxy" type="text" placeholder="如 https://ghproxy.net/" onchange="saveSettings()">
+          </div>
+        </div>
+      </div>
       <div class="card">
         <div class="table-wrapper">
           <table>
-            <thead><tr><th>名称</th><th>角色</th><th>Agent URL</th><th>状态</th><th>最近推送</th><th>备注</th><th>操作</th></tr></thead>
+            <thead><tr><th>名称</th><th>角色</th><th>公网地址</th><th>状态</th><th>最近推送</th><th>备注</th><th>操作</th></tr></thead>
             <tbody id="nodes-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LINES -->
+    <section class="page" id="page-lines">
+      <h2>线路部署</h2>
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="openAddLine()">＋ 新建线路</button>
+        <button class="btn btn-ghost"   onclick="loadLines()">刷新</button>
+      </div>
+      <div class="info-box">
+        选「中转机 + 落地机」，粘贴落地机上的节点链接，一键部署：面板自动分配端口、生成两端 realm 规则并下发，返回改好地址的新链接。<br>
+        选多台落地机即自动负载均衡，权重随到期时间/剩余流量动态调整（在「VPS 资产」里按落地 IP 填写）。
+      </div>
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>线路</th><th>路径</th><th>入口</th><th>链接</th><th>操作</th></tr></thead>
+            <tbody id="lines-tbody"></tbody>
           </table>
         </div>
       </div>
@@ -437,42 +486,177 @@ input:focus, select:focus { border-color: var(--black); background: var(--surfac
 <div class="modal-overlay" id="modal-node">
   <div class="modal">
     <div class="modal-header">
-      <h3 id="modal-node-title">添加中转节点</h3>
+      <h3 id="modal-node-title">添加节点</h3>
       <span class="modal-close" onclick="closeModal('modal-node')">✕</span>
     </div>
-    <div class="form-row">
-      <label>节点名称</label>
-      <input id="node-name" type="text" placeholder="如：HK中转-01">
+    <div class="form-grid">
+      <div class="form-row">
+        <label>节点名称</label>
+        <input id="node-name" type="text" placeholder="如：HK中转-01">
+      </div>
+      <div class="form-row">
+        <label>角色</label>
+        <select id="node-role">
+          <option value="relay">中转机</option>
+          <option value="exit">落地机</option>
+        </select>
+      </div>
     </div>
-    <div class="form-row">
-      <label>角色</label>
-      <select id="node-role">
-        <option value="relay">中转机 (relay)</option>
-        <option value="exit">落地机 (exit)</option>
-      </select>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>公网 IP / 域名</label>
+        <input id="node-host" type="text" placeholder="1.2.3.4">
+      </div>
+      <div class="form-row">
+        <label>Agent 端口</label>
+        <input id="node-port" type="number" min="1" max="65535" value="5001">
+      </div>
     </div>
-    <div class="form-row">
-      <label>Agent URL（含端口，不含路径）</label>
-      <input id="node-url" type="text" placeholder="http://1.2.3.4:5001">
+    <div class="form-grid">
+      <div class="form-row">
+        <label>状态</label>
+        <select id="node-enabled">
+          <option value="true">启用</option>
+          <option value="false">禁用</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>备注</label>
+        <input id="node-note" type="text" placeholder="可选">
+      </div>
     </div>
-    <div class="form-row">
-      <label>Token（与 Agent AGENT_TOKEN 一致）</label>
-      <input id="node-token" type="text" placeholder="长随机字符串">
-    </div>
-    <div class="form-row">
-      <label>状态</label>
-      <select id="node-enabled">
-        <option value="true">启用</option>
-        <option value="false">禁用</option>
-      </select>
-    </div>
-    <div class="form-row">
-      <label>备注</label>
-      <input id="node-note" type="text" placeholder="可选">
+    <div class="form-row" id="node-token-row">
+      <label>Token（自动生成；改了需重新执行部署命令）</label>
+      <input id="node-token" type="text">
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-node')">取消</button>
       <button class="btn btn-primary" onclick="saveNode()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: bulk import -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3>批量导入节点</h3>
+      <span class="modal-close" onclick="closeModal('modal-import')">✕</span>
+    </div>
+    <p class="hint" style="margin-bottom:12px">每行一台：<b>名称 角色 公网IP [Agent端口]</b>，空格/逗号分隔，角色填 中转 或 落地。</p>
+    <textarea id="import-text" rows="10" placeholder="HK中转1 中转 1.2.3.4
+HK中转2 中转 1.2.3.5
+JP落地1 落地 5.6.7.8
+US落地1 落地 9.9.9.9 5002"></textarea>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-import')">取消</button>
+      <button class="btn btn-primary" onclick="submitImport()">导入并生成部署命令</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: deploy commands -->
+<div class="modal-overlay" id="modal-cmd">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="cmd-title">部署命令</h3>
+      <span class="modal-close" onclick="closeModal('modal-cmd')">✕</span>
+    </div>
+    <p class="hint" style="margin-bottom:8px">SSH 登录对应机器，<b>root</b> 下粘贴执行。完成后回到节点列表刷新，状态显示「在线」即可。</p>
+    <div id="cmd-body"></div>
+    <details style="margin-top:12px">
+      <summary class="hint" style="cursor:pointer">卸载命令 / 防火墙说明</summary>
+      <div class="cmd-label">卸载 Agent 和 realm 服务</div>
+      <div class="cmd-box" id="cmd-uninstall"></div>
+      <p class="hint">节点需放行：Agent 端口（建议只允许 A 机 IP）+ 线路端口（默认 20000-59999 的 TCP/UDP）。云厂商安全组同理。</p>
+    </details>
+  </div>
+</div>
+
+<!-- Modal: new line -->
+<div class="modal-overlay" id="modal-line">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3>新建线路</h3>
+      <span class="modal-close" onclick="closeModal('modal-line')">✕</span>
+    </div>
+    <div class="form-row">
+      <label>落地节点链接（可选，粘贴后自动识别端口并生成中转后的新链接）</label>
+      <textarea id="ln-link" rows="3" placeholder="vless:// vmess:// trojan:// ss:// hy2:// tuic:// ..." oninput="onLinkInput()"></textarea>
+      <div class="hint" id="ln-link-info" style="margin-top:6px"></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>线路名称</label>
+        <input id="ln-name" type="text" placeholder="如：HK-JP">
+      </div>
+      <div class="form-row">
+        <label>中转机（入口）</label>
+        <select id="ln-relay" onchange="renderExitChecks()"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>落地机（可多选 = 负载均衡）</label>
+      <div class="check-list" id="ln-exits"></div>
+      <div class="hint" style="margin-top:6px">都不选 = 直接转发到链接里的地址（非受管落地，如机场节点）</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>转发模式</label>
+        <select id="ln-mode" onchange="onModeChange()">
+          <option value="direct">直连：中转 → 落地服务端口</option>
+          <option value="chain">链式：中转 → 落地 realm → 落地本机服务</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>落地服务端口</label>
+        <input id="ln-tport" type="number" min="1" max="65535" placeholder="从链接自动识别">
+      </div>
+    </div>
+    <div class="form-grid" id="ln-chain-row" style="display:none">
+      <div class="form-row">
+        <label>落地本机服务地址</label>
+        <input id="ln-thost" type="text" value="127.0.0.1">
+      </div>
+      <div class="form-row">
+        <label>落地 realm 监听端口</label>
+        <input id="ln-eport" type="number" min="1" max="65535" placeholder="留空自动分配">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>中转监听端口</label>
+        <input id="ln-rport" type="number" min="1" max="65535" placeholder="留空自动分配">
+      </div>
+      <div class="form-row">
+        <label>负载均衡（多落地时）</label>
+        <select id="ln-balance">
+          <option value="roundrobin">轮询（按权重）</option>
+          <option value="iphash">IP 哈希（同一用户固定落地）</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>入口地址（可选，默认中转机公网 IP；有域名可填域名）</label>
+      <input id="ln-entry" type="text" placeholder="留空自动">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-line')">取消</button>
+      <button class="btn btn-primary" id="ln-submit" onclick="submitLine()">一键部署</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: line result / test -->
+<div class="modal-overlay" id="modal-line-result">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="lr-title">部署结果</h3>
+      <span class="modal-close" onclick="closeModal('modal-line-result')">✕</span>
+    </div>
+    <div id="lr-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="closeModal('modal-line-result')">完成</button>
     </div>
   </div>
 </div>
@@ -498,6 +682,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
     if (el.dataset.page === 'weights') loadWeightPreview()
     if (el.dataset.page === 'monitor') loadMonitor()
     if (el.dataset.page === 'nodes')   loadNodes()
+    if (el.dataset.page === 'lines')   loadLines()
   })
 })
 
@@ -944,35 +1129,71 @@ function fillNodeSelect(selId, current) {
   sel.value = current || ''
 }
 
+// ---------- copy (works on plain http, where navigator.clipboard is unavailable) ----------
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => toast('已复制'), () => fallbackCopy(text))
+  } else fallbackCopy(text)
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+  document.body.appendChild(ta); ta.select()
+  try { document.execCommand('copy'); toast('已复制') } catch { prompt('复制下面的内容：', text) }
+  ta.remove()
+}
+const _copyStore = []
+function copyBtn(text, label = '复制') {
+  _copyStore.push(text)
+  return `<button class="btn btn-ghost btn-sm" onclick="copyText(_copyStore[${_copyStore.length - 1}])">${label}</button>`
+}
+
+// ---------- settings (panel URL + GH proxy, per browser) ----------
+function loadSettings() {
+  document.getElementById('set-panel-url').value = localStorage.getItem('panelUrl') || window.location.origin
+  document.getElementById('set-gh-proxy').value  = localStorage.getItem('ghProxy') || ''
+}
+function saveSettings() {
+  localStorage.setItem('panelUrl', document.getElementById('set-panel-url').value.trim().replace(/\/+$/, ''))
+  localStorage.setItem('ghProxy',  document.getElementById('set-gh-proxy').value.trim())
+  toast('已保存')
+}
+function cmdQuery() {
+  const q = new URLSearchParams({ panel: localStorage.getItem('panelUrl') || window.location.origin })
+  const gh = localStorage.getItem('ghProxy'); if (gh) q.set('gh_proxy', gh)
+  return q.toString()
+}
+
 async function loadNodes() {
+  loadSettings()
   const nodes = await fetchNodes()
   const tbody = document.getElementById('nodes-tbody')
-  const ids = Object.keys(nodes)
+  const ids = Object.keys(nodes).sort((a, b) => (nodes[a].role > nodes[b].role ? -1 : 1))
   if (!ids.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">暂无节点，先在中转机上安装 realm-agent 再添加</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">暂无节点，点「添加节点」或「批量导入」</td></tr>'
     return
   }
   tbody.innerHTML = ids.map(id => {
     const n = nodes[id]
     const push = n.last_push
-      ? `${n.last_push_ok ? '<span class="badge badge-dark">成功</span>' : '<span class="badge badge-outline">失败</span>'}
+      ? `${n.last_push_ok ? '<span class="badge badge-dark">成功</span>' : `<span class="badge badge-outline" title="${esc(n.last_push_detail)}">失败</span>`}
          <div style="color:var(--muted);font-size:12px;font-weight:700;margin-top:4px">${esc(n.last_push.replace('T',' ').slice(0,19))}</div>`
       : '<span class="tag">未推送</span>'
     return `<tr>
       <td style="font-weight:900">${esc(n.name || n.id)}<div style="color:var(--muted);font-size:12px">${esc(n.id)}</div></td>
       <td><span class="tag">${n.role === 'exit' ? '落地机' : '中转机'}</span></td>
-      <td><code>${esc(n.url)}</code></td>
+      <td><code>${esc(n.host || n.url)}</code><div style="color:var(--muted);font-size:12px;margin-top:4px">Agent :${esc(n.agent_port || '')}</div></td>
       <td id="node-health-${esc(id)}">${n.enabled === 'true' ? '<span class="tag">检测中…</span>' : '<span class="badge badge-light">禁用</span>'}</td>
       <td>${push}</td>
       <td style="color:var(--muted);font-weight:700">${esc(n.note || '—')}</td>
       <td style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick='showCmd(${JSON.stringify(id)})'>部署命令</button>
         <button class="btn btn-ghost btn-sm" onclick='pushNode(${JSON.stringify(id)})'>推送</button>
         <button class="btn btn-ghost btn-sm" onclick='openEditNode(${JSON.stringify(id)})'>编辑</button>
         <button class="btn btn-danger btn-sm" onclick='deleteNode(${JSON.stringify(id)})'>删除</button>
       </td>
     </tr>`
   }).join('')
-  // health check each enabled node in parallel
   ids.filter(id => nodes[id].enabled === 'true').forEach(async id => {
     const cell = document.getElementById('node-health-' + id)
     try {
@@ -981,20 +1202,22 @@ async function loadNodes() {
       if (r.ok) {
         cell.innerHTML = r.realm && r.realm.running
           ? '<span class="badge badge-dark">在线 · realm 运行</span>'
-          : '<span class="badge badge-outline">在线 · realm 未运行</span>'
+          : '<span class="badge badge-outline">在线 · realm 待命</span>'
       } else {
-        cell.innerHTML = `<span class="badge badge-light" title="${esc(r.error)}">离线</span>`
+        cell.innerHTML = `<span class="badge badge-light" title="${esc(r.error)}">离线 / 未部署</span>`
       }
-    } catch { if (cell) cell.innerHTML = '<span class="badge badge-light">离线</span>' }
+    } catch { if (cell) cell.innerHTML = '<span class="badge badge-light">离线 / 未部署</span>' }
   })
 }
 
 function openAddNode() {
   _editNodeId = null
   document.getElementById('modal-node-title').textContent = '添加节点'
-  ;['node-name','node-url','node-token','node-note'].forEach(i => document.getElementById(i).value = '')
+  ;['node-name','node-host','node-token','node-note'].forEach(i => document.getElementById(i).value = '')
+  document.getElementById('node-port').value = '5001'
   document.getElementById('node-role').value = 'relay'
   document.getElementById('node-enabled').value = 'true'
+  document.getElementById('node-token-row').style.display = 'none'
   openModal('modal-node')
 }
 
@@ -1004,53 +1227,255 @@ function openEditNode(id) {
   document.getElementById('modal-node-title').textContent = '编辑: ' + (n.name || id)
   document.getElementById('node-name').value    = n.name || ''
   document.getElementById('node-role').value    = n.role || 'relay'
-  document.getElementById('node-url').value     = n.url || ''
+  document.getElementById('node-host').value    = n.host || ''
+  document.getElementById('node-port').value    = n.agent_port || '5001'
   document.getElementById('node-token').value   = n.token || ''
   document.getElementById('node-enabled').value = n.enabled || 'true'
   document.getElementById('node-note').value    = n.note || ''
+  document.getElementById('node-token-row').style.display = ''
   openModal('modal-node')
 }
 
 async function saveNode() {
   const body = {
-    name:    document.getElementById('node-name').value.trim(),
-    role:    document.getElementById('node-role').value,
-    url:     document.getElementById('node-url').value.trim(),
-    token:   document.getElementById('node-token').value.trim(),
-    enabled: document.getElementById('node-enabled').value,
-    note:    document.getElementById('node-note').value.trim(),
+    name:       document.getElementById('node-name').value.trim(),
+    role:       document.getElementById('node-role').value,
+    host:       document.getElementById('node-host').value.trim(),
+    agent_port: document.getElementById('node-port').value.trim() || '5001',
+    enabled:    document.getElementById('node-enabled').value,
+    note:       document.getElementById('node-note').value.trim(),
   }
-  if (!body.url || !body.token) { toast('URL 和 Token 为必填项'); return }
+  if (!body.host) { toast('请填写公网 IP / 域名'); return }
+  if (_editNodeId) body.token = document.getElementById('node-token').value.trim()
   const url = _editNodeId ? API + '/nodes/' + encodeURIComponent(_editNodeId) : API + '/nodes'
   const res = await fetch(url, { method: _editNodeId ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
-  if (!res.ok) { const e = await res.json().catch(() => ({})); toast('保存失败：' + (e.error || res.status)); return }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) { toast('保存失败：' + (data.error || res.status)); return }
   closeModal('modal-node')
-  toast('节点已保存')
-  loadNodes()
+  await loadNodes()
+  if (!_editNodeId) showCmd(data.id)   // new node → straight to its deploy command
+  else toast('节点已保存')
 }
 
 async function deleteNode(id) {
-  if (!confirm(`确认删除节点 ${nodeName(id)}？绑定到该节点的规则将不再下发。`)) return
-  await fetch(API + '/nodes/' + encodeURIComponent(id), { method: 'DELETE' })
+  if (!confirm(`确认删除节点 ${nodeName(id)}？该节点上的规则会一并删除。`)) return
+  const res = await fetch(API + '/nodes/' + encodeURIComponent(id), { method: 'DELETE' })
+  const d = await res.json().catch(() => ({}))
+  if (!res.ok) { toast(d.error || '删除失败'); return }
   toast('节点已删除')
   loadNodes()
+}
+
+async function renderCmds(ids, title) {
+  const results = await Promise.all(ids.map(id =>
+    fetch(API + '/nodes/' + encodeURIComponent(id) + '/install-cmd?' + cmdQuery()).then(r => r.json())))
+  document.getElementById('cmd-title').textContent = title
+  document.getElementById('cmd-body').innerHTML = ids.map((id, i) => {
+    const n = _nodesCache[id] || {}
+    return `<div class="cmd-label">${esc(n.name || id)} <span class="tag">${n.role === 'exit' ? '落地' : '中转'} · ${esc(n.host || '')}</span> ${copyBtn(results[i].cmd, '复制命令')}</div>
+            <div class="cmd-box">${esc(results[i].cmd)}</div>`
+  }).join('')
+  document.getElementById('cmd-uninstall').textContent = (results[0] || {}).uninstall || ''
+  openModal('modal-cmd')
+}
+function showCmd(id) { return renderCmds([id], '部署命令 · ' + nodeName(id)) }
+async function showAllCmds() {
+  await fetchNodes()
+  const ids = Object.keys(_nodesCache)
+  if (!ids.length) { toast('还没有节点'); return }
+  renderCmds(ids, `全部部署命令（${ids.length} 台）`)
+}
+
+function openImport() { document.getElementById('import-text').value = ''; openModal('modal-import') }
+async function submitImport() {
+  const text = document.getElementById('import-text').value
+  const r = await fetch(API + '/nodes/import', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ text }) }).then(r => r.json())
+  if (r.errors && r.errors.length) alert('以下行未导入：\n' + r.errors.join('\n'))
+  if (!r.created || !r.created.length) return
+  closeModal('modal-import')
+  await loadNodes()
+  renderCmds(r.created.map(n => n.id), `已导入 ${r.created.length} 台 · 部署命令`)
 }
 
 async function pushNode(id) {
   toast('推送中…')
   const r = await fetch(API + '/nodes/' + encodeURIComponent(id) + '/push', { method: 'POST' }).then(r => r.json())
-  toast(r.ok ? `已推送到 ${nodeName(id)}` : '推送失败：' + (r.error || '未知错误'))
+  toast(r.ok ? `已推送到 ${nodeName(id)}` : '推送失败：' + (r.error || (r.reload && r.reload.detail) || '未知错误'))
   loadNodes()
 }
 
 async function pushAllNodes() {
+  if (!confirm('强制推送会重启所有节点上的 realm（现有连接会断开一下），确定？')) return
   toast('正在推送到全部节点…')
   const r = await fetch(API + '/nodes/push-all', { method: 'POST' }).then(r => r.json())
   const res = r.results || {}
-  const total = Object.values(res).filter(v => !v.skipped).length
+  const total = Object.values(res).filter(v => !v.skipped || v.reason).length
   const ok = Object.values(res).filter(v => v.ok).length
   toast(`推送完成：${ok}/${total} 成功`)
   loadNodes()
+}
+
+// ---------- Lines ----------
+let _linesCache = {}
+let _parsedLink = null
+
+async function loadLines() {
+  await fetchNodes()
+  _linesCache = await fetch(API + '/lines').then(r => r.json()).catch(() => ({}))
+  const tbody = document.getElementById('lines-tbody')
+  const ls = Object.values(_linesCache)
+  if (!ls.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:40px;font-weight:700;">还没有线路，点「新建线路」</td></tr>'
+    return
+  }
+  tbody.innerHTML = ls.map(l => {
+    const exits = l.exit_nodes.length ? l.exit_nodes.map(nodeName).join(' / ') : l.exit_hosts.join(' / ')
+    const path = `${esc(nodeName(l.relay_node))} → ${esc(exits)}`
+    const mode = l.mode === 'chain' ? `链式 · 落地:${l.exit_port} → ${esc(l.target_host)}:${l.target_port}` : `直连 · 落地端口 ${l.target_port}`
+    const lb = l.exit_hosts.length > 1 ? ` · ${l.balance === 'iphash' ? 'IP哈希' : '轮询'}` : ''
+    return `<tr>
+      <td style="font-weight:900">${esc(l.name)}<div style="color:var(--muted);font-size:12px">${esc(l.id)}</div></td>
+      <td style="font-weight:800">${path}<div style="color:var(--muted);font-size:12px;margin-top:4px">${mode}${lb}</div></td>
+      <td><code>${esc(l.entry)}</code> ${copyBtn(l.entry)}</td>
+      <td>${l.out_link ? copyBtn(l.out_link, '复制链接') : '<span class="tag">未提供原链接</span>'}</td>
+      <td style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick='testLine(${JSON.stringify(l.id)})'>测试</button>
+        <button class="btn btn-ghost btn-sm" onclick='redeployLine(${JSON.stringify(l.id)})'>重新下发</button>
+        <button class="btn btn-danger btn-sm" onclick='deleteLine(${JSON.stringify(l.id)})'>删除</button>
+      </td>
+    </tr>`
+  }).join('')
+}
+
+function renderExitChecks() {
+  const relay = document.getElementById('ln-relay').value
+  const prev = new Set([...document.querySelectorAll('#ln-exits input:checked')].map(i => i.value))
+  const nodes = Object.values(_nodesCache).filter(n => n.id !== relay)
+    .sort((a, b) => (a.role === 'exit' ? -1 : 1) - (b.role === 'exit' ? -1 : 1))
+  document.getElementById('ln-exits').innerHTML = nodes.length ? nodes.map(n =>
+    `<label class="check-item"><input type="checkbox" value="${esc(n.id)}" ${prev.has(n.id) ? 'checked' : ''}>
+      ${esc(n.name || n.id)} <span class="tag">${n.role === 'exit' ? '落地' : '中转'} · ${esc(n.host)}</span></label>`).join('')
+    : '<span class="hint">没有可选节点，先去「节点管理」添加</span>'
+}
+
+async function openAddLine() {
+  await fetchNodes()
+  const relays = Object.values(_nodesCache).sort((a, b) => (a.role === 'relay' ? -1 : 1) - (b.role === 'relay' ? -1 : 1))
+  document.getElementById('ln-relay').innerHTML =
+    relays.map(n => `<option value="${esc(n.id)}">${esc(n.name || n.id)} · ${n.role === 'exit' ? '落地' : '中转'} · ${esc(n.host)}</option>`).join('')
+    + '<option value="">本机 (A)</option>'
+  ;['ln-link','ln-name','ln-tport','ln-eport','ln-rport','ln-entry'].forEach(i => document.getElementById(i).value = '')
+  document.getElementById('ln-thost').value = '127.0.0.1'
+  document.getElementById('ln-mode').value = 'direct'
+  document.getElementById('ln-balance').value = 'roundrobin'
+  document.getElementById('ln-link-info').textContent = ''
+  document.getElementById('ln-exits').innerHTML = ''
+  _parsedLink = null
+  onModeChange(); renderExitChecks()
+  openModal('modal-line')
+}
+
+function onModeChange() {
+  document.getElementById('ln-chain-row').style.display = document.getElementById('ln-mode').value === 'chain' ? '' : 'none'
+}
+
+let _linkTimer = null
+function onLinkInput() {
+  clearTimeout(_linkTimer)
+  _linkTimer = setTimeout(async () => {
+    const link = document.getElementById('ln-link').value.trim()
+    const info = document.getElementById('ln-link-info')
+    _parsedLink = null
+    if (!link) { info.textContent = ''; return }
+    const res = await fetch(API + '/links/parse', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ link }) })
+    const d = await res.json()
+    if (!res.ok) { info.textContent = '✗ ' + (d.error || '无法识别'); return }
+    _parsedLink = d
+    info.textContent = `✓ ${d.scheme} · ${d.host}:${d.port}${d.name ? ' · ' + d.name : ''}`
+    if (!document.getElementById('ln-tport').value) document.getElementById('ln-tport').value = d.port
+    if (!document.getElementById('ln-name').value && d.name) document.getElementById('ln-name').value = d.name
+    // auto-tick the exit node whose address matches the link
+    const match = Object.values(_nodesCache).find(n => n.host === d.host)
+    if (match) {
+      const cb = document.querySelector(`#ln-exits input[value="${CSS.escape(match.id)}"]`)
+      if (cb) cb.checked = true
+      info.textContent += `  → 已自动勾选落地机「${match.name || match.id}」`
+    }
+  }, 300)
+}
+
+async function submitLine() {
+  const exits = [...document.querySelectorAll('#ln-exits input:checked')].map(i => i.value)
+  const body = {
+    name:        document.getElementById('ln-name').value.trim(),
+    link:        document.getElementById('ln-link').value.trim(),
+    relay_node:  document.getElementById('ln-relay').value,
+    exit_nodes:  exits,
+    mode:        document.getElementById('ln-mode').value,
+    target_port: document.getElementById('ln-tport').value.trim(),
+    target_host: document.getElementById('ln-thost').value.trim(),
+    exit_port:   document.getElementById('ln-eport').value.trim(),
+    relay_port:  document.getElementById('ln-rport').value.trim(),
+    balance:     document.getElementById('ln-balance').value,
+    entry_host:  document.getElementById('ln-entry').value.trim(),
+  }
+  const btn = document.getElementById('ln-submit')
+  btn.disabled = true; btn.textContent = '部署中…'
+  try {
+    const res = await fetch(API + '/lines', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) { toast('部署失败：' + (d.error || res.status)); return }
+    closeModal('modal-line')
+    showLineResult(d)
+    loadLines()
+  } finally { btn.disabled = false; btn.textContent = '一键部署' }
+}
+
+function pushRows(push) {
+  return Object.entries(push || {}).map(([name, r]) =>
+    `<div class="step-row"><span>${esc(name)}</span><span>${r.ok ? '<span class="badge badge-dark">已下发</span>' : `<span class="badge badge-outline">失败</span> <span class="hint">${esc(r.detail)}</span>`}</span></div>`).join('')
+}
+
+function showLineResult(l) {
+  const allOk = Object.values(l._push || {}).every(r => r.ok)
+  document.getElementById('lr-title').textContent = allOk ? '✓ 线路已部署' : '线路已创建，部分节点下发失败'
+  document.getElementById('lr-body').innerHTML = `
+    <div class="cmd-label">入口地址 ${copyBtn(l.entry)}</div>
+    <div class="cmd-box">${esc(l.entry)}</div>
+    ${l.out_link ? `<div class="cmd-label">中转后的节点链接 ${copyBtn(l.out_link, '复制链接')}</div>
+                    <div class="cmd-box">${esc(l.out_link)}</div>`
+                 : '<p class="hint">未提供原链接：把客户端里该节点的地址改成上面的入口地址即可。</p>'}
+    <div class="cmd-label">下发结果</div>
+    ${pushRows(l._push)}
+    ${allOk ? '' : '<p class="hint" style="margin-top:12px">失败的节点：检查是否已执行部署命令、Agent 端口是否放行；修好后在线路列表点「重新下发」。</p>'}
+    <p class="hint" style="margin-top:12px">记得在中转机放行入口端口 ${l.relay_port}${l.mode === 'chain' ? `、落地机放行 ${l.exit_port}` : ''}（TCP+UDP）。可点「测试」逐跳检查。</p>`
+  openModal('modal-line-result')
+}
+
+async function testLine(id) {
+  toast('测试中…')
+  const r = await fetch(API + '/lines/' + encodeURIComponent(id) + '/test', { method: 'POST' }).then(r => r.json())
+  document.getElementById('lr-title').textContent = r.ok ? '✓ 链路全部连通' : '链路测试'
+  document.getElementById('lr-body').innerHTML = (r.steps || []).map(s =>
+    `<div class="step-row"><span>${esc(s.step)}</span><span>${s.ok ? `<span class="badge badge-dark">${s.ms} ms</span>` : `<span class="badge badge-outline">不通</span> <span class="hint">${esc(s.error)}</span>`}</span></div>`).join('')
+    + '<p class="hint" style="margin-top:12px">只测 TCP 握手。第一跳从 A 机发起；若 A 与用户网络不同，以客户端实测为准。</p>'
+  openModal('modal-line-result')
+}
+
+async function redeployLine(id) {
+  toast('下发中…')
+  const r = await fetch(API + '/lines/' + encodeURIComponent(id) + '/redeploy', { method: 'POST' }).then(r => r.json())
+  document.getElementById('lr-title').textContent = '重新下发结果'
+  document.getElementById('lr-body').innerHTML = pushRows(r._push)
+  openModal('modal-line-result')
+}
+
+async function deleteLine(id) {
+  const l = _linesCache[id]
+  if (!confirm(`删除线路「${l ? l.name : id}」？中转和落地上的对应转发会一起移除。`)) return
+  const r = await fetch(API + '/lines/' + encodeURIComponent(id), { method: 'DELETE' }).then(r => r.json())
+  toast(r.ok ? '线路已删除' : '删除失败')
+  loadLines()
 }
 
 fetchNodes()

@@ -182,7 +182,7 @@ def selftest_rule(rule_id: str) -> dict:
     rp = rule.get("REMOTE_PORT", "")
     if rh and rp:
         probe_results = []
-        for h in (x.strip() for x in rh.split(",") if x.strip())[:3]:
+        for h in [x.strip() for x in rh.split(",") if x.strip()][:3]:
             ok, ms = _tcp(h, rp)
             probe_results.append({"host": h, "ok": ok, "ms": ms})
         remote_ok = any(p["ok"] for p in probe_results)

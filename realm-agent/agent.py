@@ -4,7 +4,7 @@ Realm Relay Agent — lightweight HTTP daemon for remote realm management.
 
 Deploy one instance on each relay/exit machine. The panel pushes
 config.json over HTTP with a Bearer token; the agent writes the file
-and sends SIGHUP to realm so it hot-reloads without dropping connections.
+and restarts the realm systemd service (realm has no hot-reload).
 
 Environment variables:
   AGENT_TOKEN       Required. Shared secret; panel must send matching token.
@@ -22,7 +22,9 @@ import os
 import signal
 import subprocess
 import sys
+import socket
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,6 +39,7 @@ TOKEN        = os.environ.get("AGENT_TOKEN", "")
 PORT         = int(os.environ.get("AGENT_PORT", "5001"))
 REALM_CONFIG = os.environ.get("REALM_CONFIG", "/etc/realm/config.json")
 REALM_SVC    = os.environ.get("REALM_SERVICE", "realm")
+AGENT_VERSION = "2"
 
 if not TOKEN:
     log.error("AGENT_TOKEN is not set — refusing to start (would accept any request)")
@@ -48,46 +51,66 @@ if not TOKEN:
 # ---------------------------------------------------------------------------
 
 def _realm_pid() -> int | None:
-    """Return realm's PID by scanning /proc, or None if not found."""
+    """Return the realm process PID by scanning /proc, or None."""
     try:
         for entry in Path("/proc").iterdir():
             if not entry.name.isdigit():
                 continue
             try:
-                cmdline = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode()
-                if "realm" in cmdline and "-c" in cmdline:
+                argv = (entry / "cmdline").read_bytes().split(b"\x00")
+                exe = os.path.basename(argv[0].decode(errors="replace")) if argv else ""
+                if exe == "realm":
                     return int(entry.name)
-            except (PermissionError, FileNotFoundError):
+            except (PermissionError, FileNotFoundError, ProcessLookupError):
                 pass
     except Exception:
         pass
     return None
 
 
+def _systemctl(*args) -> subprocess.CompletedProcess:
+    return subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=15)
+
+
 def _reload_realm() -> dict:
     """
-    Try SIGHUP first; fall back to systemctl restart.
+    Apply the current config.json. realm has no hot-reload (SIGHUP would
+    terminate it), so restart the service. With zero endpoints realm
+    refuses to run, so stop it instead.
     Returns {"ok": bool, "method": str, "detail": str}.
     """
-    pid = _realm_pid()
-    if pid:
-        try:
-            os.kill(pid, signal.SIGHUP)
-            log.info("sent SIGHUP to realm pid %d", pid)
-            return {"ok": True, "method": "sighup", "detail": f"pid {pid}"}
-        except ProcessLookupError:
-            pass
+    try:
+        cfg = json.loads(Path(REALM_CONFIG).read_text())
+        empty = not cfg.get("endpoints")
+    except Exception:
+        empty = False
+    if empty:
+        r = _systemctl("stop", REALM_SVC)
+        log.info("no endpoints -> stopped %s", REALM_SVC)
+        return {"ok": r.returncode == 0, "method": "stop", "detail": "no endpoints"}
 
-    # fallback: systemctl restart (requires agent running as root or with sudo)
-    result = subprocess.run(
-        ["systemctl", "restart", REALM_SVC],
-        capture_output=True, text=True, timeout=10
-    )
-    if result.returncode == 0:
-        log.info("systemctl restart %s OK", REALM_SVC)
-        return {"ok": True, "method": "systemctl", "detail": f"restart {REALM_SVC}"}
-    log.warning("systemctl restart failed: %s", result.stderr.strip())
-    return {"ok": False, "method": "systemctl", "detail": result.stderr.strip() or "non-zero exit"}
+    _systemctl("enable", REALM_SVC)
+    r = _systemctl("restart", REALM_SVC)
+    if r.returncode != 0:
+        log.warning("systemctl restart failed: %s", r.stderr.strip())
+        return {"ok": False, "method": "systemctl", "detail": r.stderr.strip() or "non-zero exit"}
+    # realm exits immediately on a bad config / busy port — catch that
+    time.sleep(0.8)
+    if _systemctl("is-active", REALM_SVC).stdout.strip() != "active":
+        logs = subprocess.run(["journalctl", "-u", REALM_SVC, "-n", "5", "--no-pager"],
+                              capture_output=True, text=True, timeout=10).stdout
+        return {"ok": False, "method": "systemctl", "detail": "realm 启动失败: " + logs[-400:]}
+    log.info("restarted %s", REALM_SVC)
+    return {"ok": True, "method": "systemctl", "detail": f"restart {REALM_SVC}"}
+
+
+def _tcping(host: str, port: int, timeout: float = 3.0) -> dict:
+    t0 = time.monotonic()
+    try:
+        with socket.create_connection((host.strip("[]"), int(port)), timeout=timeout):
+            return {"ok": True, "ms": round((time.monotonic() - t0) * 1000, 1)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def _realm_status() -> dict:
@@ -95,12 +118,11 @@ def _realm_status() -> dict:
     if pid:
         return {"running": True, "pid": pid}
     # try systemctl is-active
-    result = subprocess.run(
-        ["systemctl", "is-active", REALM_SVC],
-        capture_output=True, text=True, timeout=5
-    )
-    active = result.stdout.strip() == "active"
-    return {"running": active, "pid": None, "systemctl": result.stdout.strip()}
+    try:
+        state = _systemctl("is-active", REALM_SVC).stdout.strip()
+    except Exception as e:
+        state = f"unknown ({e})"
+    return {"running": state == "active", "pid": None, "systemctl": state}
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +168,7 @@ class AgentHandler(http.server.BaseHTTPRequestHandler):
             self._respond(200, {
                 "ok": True,
                 "realm": status,
+                "agent_version": AGENT_VERSION,
                 "agent_time": datetime.now(timezone.utc).isoformat(),
             })
         elif self.path in ("/status", "/status/"):
@@ -188,8 +211,12 @@ class AgentHandler(http.server.BaseHTTPRequestHandler):
                 log.error("write config failed: %s", e)
                 return self._respond(500, {"error": str(e)})
 
-            reload_result = _reload_realm()
-            self._respond(200, {"ok": True, "reload": reload_result})
+            try:
+                reload_result = _reload_realm()
+            except Exception as e:
+                reload_result = {"ok": False, "method": "error", "detail": str(e)}
+            self._respond(200, {"ok": reload_result["ok"], "reload": reload_result,
+                                "endpoints": len(cfg.get("endpoints") or [])})
         else:
             self._respond(404, {"error": "not found"})
 
@@ -200,6 +227,12 @@ class AgentHandler(http.server.BaseHTTPRequestHandler):
             result = _reload_realm()
             code = 200 if result["ok"] else 500
             self._respond(code, {"ok": result["ok"], "reload": result})
+        elif self.path in ("/tcping", "/tcping/"):
+            body = self._read_json() or {}
+            host, port = str(body.get("host", "")), body.get("port")
+            if not host or not str(port).isdigit():
+                return self._respond(400, {"ok": False, "error": "host and port required"})
+            self._respond(200, _tcping(host, int(port)))
         else:
             self._respond(404, {"error": "not found"})
 
